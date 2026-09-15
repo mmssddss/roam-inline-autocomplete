@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# 依赖与日志
+node_modules/
+*.log
+
+# 本地环境变量 / 密钥
+.env
+.env.*
+
+# 编辑器
+.idea/
+.vscode/
+
+# Claude Code 的个人本地配置
+.claude/settings.local.json
+CLAUDE.local.md
