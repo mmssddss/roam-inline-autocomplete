@@ -38,6 +38,10 @@ The popup has two panes: suggestions on the left and a live preview of the selec
 
 The preview is read-only. It lightly styles `[[links]]`, `#tags`, `((references))` (shown as the referenced block's text), bold, italic, highlights, and code, and shows up to 28 blocks, 4 levels deep. In windows narrower than 640px, only the list is shown.
 
+## Appearance
+
+The popup follows Roam's light and dark mode automatically. If you use the [Roam Studio](https://github.com/rcvd/RoamStudio) plugin, it also matches whichever theme (Craft, Things, Quattro, and so on) and appearance (Light / Dark / Auto) is active — colors, shadows, and corner radius included. No setup needed.
+
 ## Chinese, Japanese, and Korean
 
 - Nothing pops up while your input method is composing (pinyin, kana, and so on). Matching starts once the text is committed (`compositionend`).

@@ -495,6 +495,8 @@ function openWith(textarea, tail, items) {
   state.query = tail; // 当前整个词，Esc 时记住它
   state.items = items;
   state.index = 0;
+  ensurePopup();
+  applyRoamStudioTheme();
   render();
   place();
 }
@@ -672,6 +674,20 @@ function on(target, type, fn, opts) {
 /* 样式                                                                */
 /* ------------------------------------------------------------------ */
 
+// 深色主题的变量覆盖（Roam 自带深色、以及 JS 读不到 Roam Studio 变量时的兜底）
+const DARK_VARS = `
+  --ac-bg: #30404d;
+  --ac-pane: #293742;
+  --ac-text: #f5f8fa;
+  --ac-muted: #b8c5cf;
+  --ac-faint: #738694;
+  --ac-bullet: #8a9ba8;
+  --ac-line: rgba(255, 255, 255, 0.12);
+  --ac-accent: #7ac5f5;
+  --ac-active: rgba(72, 175, 240, 0.12);
+  --ac-mark: #7a5b00;
+  --ac-shadow: 0 0 0 1px rgba(16, 22, 26, 0.4), 0 2px 4px rgba(16, 22, 26, 0.4), 0 10px 30px -6px rgba(16, 22, 26, 0.7);`;
+
 // 颜色都是 #rr-inline-ac 上的 CSS 变量，深色主题只覆盖变量
 const CSS = `
 #${POPUP_ID} {
@@ -686,6 +702,7 @@ const CSS = `
   --ac-active: rgba(19, 124, 189, 0.1);
   --ac-mark: #fef09f;
   --ac-shadow: 0 0 0 1px rgba(16, 22, 26, 0.1), 0 2px 4px rgba(16, 22, 26, 0.1), 0 10px 30px -6px rgba(16, 22, 26, 0.25);
+  --ac-radius: 8px;
 
   position: fixed;
   z-index: 9999;
@@ -696,7 +713,7 @@ const CSS = `
   height: 340px;
   max-height: calc(100vh - 16px);
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: var(--ac-radius);
   background: var(--ac-bg);
   color: var(--ac-text);
   box-shadow: var(--ac-shadow);
@@ -786,7 +803,7 @@ const CSS = `
 #${POPUP_ID} .rr-pv-ref { border-bottom: 1px solid var(--ac-faint); }
 #${POPUP_ID} .rr-pv-empty, #${POPUP_ID} .rr-pv-more { margin-top: 8px; font-size: 12px; color: var(--ac-muted); }
 #${POPUP_ID} code { padding: 0 3px; border-radius: 3px; background: var(--ac-line); font-size: 12px; }
-#${POPUP_ID} mark { padding: 0 1px; border-radius: 2px; background: var(--ac-mark); color: inherit; }
+#${POPUP_ID} mark { padding: 0 1px; border-radius: 2px; background: var(--ac-mark); color: var(--ac-mark-text, inherit); }
 
 /* 底部：按键提示 */
 #${POPUP_ID} .rr-ac-foot {
@@ -828,19 +845,8 @@ const CSS = `
 }
 
 /* 深色主题 */
-.bp3-dark #${POPUP_ID}, .dark-theme #${POPUP_ID}, [data-theme="dark"] #${POPUP_ID} {
-  --ac-bg: #30404d;
-  --ac-pane: #293742;
-  --ac-text: #f5f8fa;
-  --ac-muted: #b8c5cf;
-  --ac-faint: #738694;
-  --ac-bullet: #8a9ba8;
-  --ac-line: rgba(255, 255, 255, 0.12);
-  --ac-accent: #7ac5f5;
-  --ac-active: rgba(72, 175, 240, 0.12);
-  --ac-mark: #7a5b00;
-  --ac-shadow: 0 0 0 1px rgba(16, 22, 26, 0.4), 0 2px 4px rgba(16, 22, 26, 0.4), 0 10px 30px -6px rgba(16, 22, 26, 0.7);
-}
+.bp3-dark #${POPUP_ID}, .dark-theme #${POPUP_ID}, [data-theme="dark"] #${POPUP_ID}, .rs-dark #${POPUP_ID} { ${DARK_VARS} }
+@media (prefers-color-scheme: dark) { .rs-auto #${POPUP_ID} { ${DARK_VARS} } }
 `;
 
 function injectStyle() {
@@ -849,6 +855,162 @@ function injectStyle() {
   s.id = STYLE_ID;
   s.textContent = CSS;
   document.head.appendChild(s);
+}
+
+/* ------------------------------------------------------------------ */
+/* Roam Studio 主题适配                                                  */
+/* ------------------------------------------------------------------ */
+
+// Roam Studio 往 <head> 注入 <style id="roamstudio-css-theme">，里面是 :root 上的
+// --bc-*（背景）/ --co-*（文字）/ --sd-*（阴影）/ --bd-*（圆角）变量；<html> 上带
+// rs-light / rs-dark / rs-auto。它不把主题名写进 DOM，所以每次打开弹层时读变量现算。
+const RS_STYLE_ID = "roamstudio-css-theme";
+const AC_VARS = [
+  "--ac-bg", "--ac-pane", "--ac-text", "--ac-muted", "--ac-faint",
+  "--ac-bullet", "--ac-line", "--ac-accent", "--ac-active",
+  "--ac-mark", "--ac-mark-text", "--ac-shadow", "--ac-radius",
+];
+
+// 颜色统一表示为 [r, g, b, a]，a 省略时当 1
+function parseColor(str) {
+  const s = (str || "").trim();
+  let m = /^#([0-9a-f]{3,8})$/i.exec(s);
+  if (m) {
+    const h = m[1];
+    if (h.length !== 3 && h.length !== 4 && h.length !== 6 && h.length !== 8) return null;
+    const ch = h.length <= 4 ? (i) => h[i] + h[i] : (i) => h.slice(i * 2, i * 2 + 2);
+    const v = (i) => parseInt(ch(i), 16);
+    return [v(0), v(1), v(2), h.length === 4 || h.length === 8 ? v(3) / 255 : 1];
+  }
+  m = /^rgba?\(\s*([^)]*?)\s*\)$/i.exec(s);
+  if (m) {
+    const parts = m[1].split(/[\s,]+/).filter(Boolean);
+    if (parts.length !== 3 && parts.length !== 4) return null;
+    const n = parts.map(Number);
+    if (n.some((x) => !Number.isFinite(x))) return null;
+    return [n[0], n[1], n[2], parts.length === 4 ? n[3] : 1];
+  }
+  return null;
+}
+
+// fg 按自己的 alpha 叠在不透明的 bg 上，返回不透明色
+function over(fg, bg) {
+  const a = fg[3];
+  return [
+    Math.round(fg[0] * a + bg[0] * (1 - a)),
+    Math.round(fg[1] * a + bg[1] * (1 - a)),
+    Math.round(fg[2] * a + bg[2] * (1 - a)),
+    1,
+  ];
+}
+
+// 逐通道线性插值，t = 1 时全取 a，返回不透明色
+function mix(a, b, t) {
+  return [
+    Math.round(b[0] + (a[0] - b[0]) * t),
+    Math.round(b[1] + (a[1] - b[1]) * t),
+    Math.round(b[2] + (a[2] - b[2]) * t),
+    1,
+  ];
+}
+
+// WCAG 相对亮度与对比度（都按不透明算）
+function luminance(c) {
+  const f = (v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+}
+
+function contrast(a, b) {
+  const hi = Math.max(luminance(a), luminance(b));
+  const lo = Math.min(luminance(a), luminance(b));
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+function cssColor(c) {
+  const r = Math.round(c[0]), g = Math.round(c[1]), b = Math.round(c[2]);
+  return c[3] < 1 ? `rgba(${r}, ${g}, ${b}, ${c[3]})` : `rgb(${r}, ${g}, ${b})`;
+}
+
+function alpha(c, a) {
+  return [c[0], c[1], c[2], a];
+}
+
+// 每次打开弹层时调：Roam Studio 在就把它的变量折算成 --ac-* 写到弹层上，
+// 不在（或读出来不靠谱）就清掉这些覆盖，回到自带样式
+function applyRoamStudioTheme() {
+  for (const v of AC_VARS) popup.style.removeProperty(v);
+  if (!document.getElementById(RS_STYLE_ID)) return;
+  const cs = getComputedStyle(document.documentElement);
+  // 有些主题把变量声明成空值，所以逐个候选读，第一个能解析且不透明的胜出
+  const color = (...names) => {
+    for (const n of names) {
+      const c = parseColor(cs.getPropertyValue(n));
+      if (c && c[3] === 1) return c;
+    }
+    return null;
+  };
+  const raw = (n) => cs.getPropertyValue(n).trim();
+
+  const bg = color("--bc-popover", "--bc-commandpalette__menu", "--bc-app");
+  const text = color("--co-popover", "--co-app");
+  if (!bg || !text || contrast(text, bg) < 4.5) return;
+
+  const pane = color("--bc-app") || bg; // 预览区排得像一个 Roam 页面，用页面背景
+  let muted = text;
+  for (const t of [0.7, 0.8, 0.9, 1]) {
+    const c = mix(text, bg, t);
+    if (contrast(c, bg) >= 4.5) {
+      muted = c;
+      break;
+    }
+  }
+  const faint = mix(text, bg, 0.45);
+  const line = alpha(text, 0.12);
+  const bullet = color("--bc-main__bullet-inner") || faint;
+  let active = color("--bc-block-search__menu-item--hover", "--bc-commandpalette__menu-item--active");
+  if (!active || contrast(text, active) < 4.5) active = alpha(text, 0.08);
+  const activeSolid = over(active, bg);
+  let accent = color("--co-main__page-link");
+  if (!accent || contrast(accent, bg) < 4.5 || contrast(accent, activeSolid) < 4.5) accent = text;
+
+  // 高亮色允许半透明；文字色要能和叠出来的底色拉开对比，不然退回主题文字色
+  const m = parseColor(raw("--bc-main__highlight"));
+  const mt = color("--co-main__highlight");
+  let mark;
+  if (m) {
+    const solid = over(m, bg);
+    if (mt && contrast(mt, solid) >= 4.5) {
+      mark = m;
+      popup.style.setProperty("--ac-mark-text", cssColor(mt));
+    } else if (contrast(text, solid) >= 4.5) {
+      mark = m;
+    } else {
+      mark = alpha(accent, 0.18);
+    }
+  } else {
+    mark = alpha(accent, 0.18);
+  }
+
+  // 阴影和圆角不是颜色，非空就原样抄过来
+  const shadow = raw("--sd-popover");
+  if (shadow) popup.style.setProperty("--ac-shadow", shadow);
+  const radius = raw("--bd-popover");
+  if (radius) popup.style.setProperty("--ac-radius", radius);
+
+  const set = (k, v) => popup.style.setProperty(k, cssColor(v));
+  set("--ac-bg", bg);
+  set("--ac-pane", pane);
+  set("--ac-text", text);
+  set("--ac-muted", muted);
+  set("--ac-faint", faint);
+  set("--ac-line", line);
+  set("--ac-bullet", bullet);
+  set("--ac-accent", accent);
+  set("--ac-active", active);
+  set("--ac-mark", mark);
 }
 
 /* ------------------------------------------------------------------ */

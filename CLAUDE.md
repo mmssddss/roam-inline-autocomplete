@@ -31,7 +31,7 @@ Roam Research 插件（Roam Depot 扩展格式）。在 block 编辑框里边打
 - **预览**：用 `pull` 拉子树，渲染成带竖线的嵌套大纲（`outlineHtml`），结果缓存到 `close()` 为止。
 - **写回 textarea**：`commit()` 把光标前的 `item.q` 替换成 `buildInsert(item)` 的结果。
 - **事件**：document / window 上的捕获阶段监听。`evaluate()` 是「要不要弹」的总入口。
-- **样式**：一段 CSS 字符串注入 `<style>`。颜色全是 `#rr-inline-ac` 上的 `--ac-*` 变量，深色主题只覆盖这些变量。
+- **样式**：一段 CSS 字符串注入 `<style>`。颜色全是 `#rr-inline-ac` 上的 `--ac-*` 变量，深色主题只覆盖这些变量。Roam Studio 适配是打开弹层时用 JS 读它注入到 `:root` 的 `--bc-*/--co-*` 变量算成 `--ac-*` 写在弹层元素上；变量为空时换候选，读不到就回自带样式。
 - **生命周期**：`onload` 注册设置面板、命令面板和监听；`onunload` 全部撤销。
 
 ## 必须遵守的约束
