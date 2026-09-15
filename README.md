@@ -1,48 +1,64 @@
 # Inline Autocomplete for Roam Research
 
-不输入 `[[`，边打字边弹出页面标题候选。支持中文/日文/韩文输入法。
+Page and block suggestions pop up as you type, without typing `[[` first. Works with Chinese, Japanese, and Korean input methods.
 
-## 安装（本地开发扩展）
+## Install (local developer extension)
 
-1. 把整个 `roam-inline-autocomplete` 文件夹放到本机任意位置。
-2. Roam 里打开 Settings → Roam Depot，右上角 ⚙ 打开 **Enable developer mode**。
-3. 在 Developer Extensions 里点 **Load extension**，选择这个文件夹。
-4. 之后每次改了 `extension.js`，在同一处点 Reload 即可。
+1. Put the `roam-inline-autocomplete` folder anywhere on your computer.
+2. In Roam, open Settings → Roam Depot and turn on **Enable developer mode** (the ⚙ in the top-right corner).
+3. Under Developer Extensions, click **Load extension** and choose this folder.
+4. After editing `extension.js`, click **Reload** in the same place.
 
-## 用法
+## Usage
 
-| 按键 | 作用 |
+| Key | What it does |
 |---|---|
-| 直接打字 | 光标前的文字和某个页面标题匹配时自动弹出候选 |
-| ↑ / ↓ | 切换候选 |
-| Enter / Tab | 页面候选 → 替换成 `[[标题]]`（或 `#标签`）；block 候选 → 替换成 `((uid))`（或 `[原文](((uid)))`） |
-| Esc | 关闭候选；同一个词不再弹，直到你换词或换 block |
+| Type as usual | When the text before the cursor matches a page title, suggestions appear |
+| ↑ / ↓ | Move through the suggestions |
+| Enter / Tab | Page: replaces the matched text with `[[Title]]` (or `#tag`). Block: replaces it with `((uid))` (or `[text](((uid)))`) |
+| Esc | Close the suggestions. They won't reappear for the same word until you type a different word or move to another block |
 
-以下情况不会触发，交给 Roam 原生补全：`[[ ]]`、`(( ))`、`{{ }}`、`#tag`、`/命令`、`属性::`、``` 代码块内部。
+To stay out of the way of Roam's own autocomplete, nothing pops up inside `[[ ]]`, `(( ))`, `{{ }}`, `#tag`, `/commands`, `attribute::`, or ``` code blocks.
 
-## 预览
+## Suggestions
 
-弹框左右分栏：左边是候选列表，右边实时预览当前选中项（↑↓ 或鼠标悬停切换）。
+Each suggestion is shown the way Roam writes it:
 
-- 页面：标题、引用次数、block 数，以及页面正文大纲。
-- block：所在页面、block 原文，以及它的子块。
+- **Pages** look like the link you'll get: `[[Title]]`, or `#Title` if you insert tags.
+- **Blocks** have a bullet, with the page they're on underneath. Picking one inserts a block reference; it **never** creates a new page.
 
-预览是只读的纯文本渲染，会把 `[[链接]]`、`#标签`、`((引用))`（解析成被引用块的文字）、粗体/斜体/高亮/代码做简单着色；最多显示 28 行、4 层。窗口宽度不足 640px 时只显示列表。
+Pages come first, then blocks, with a divider in between. Block search is on by default, starts at 3 characters, and shows up to 5 blocks. You can change these or turn it off in the settings.
 
-## 候选类型
+## Preview
 
-下拉框每一行前面有标记：
+The popup has two panes: suggestions on the left and a live preview of the selected one on the right (switch with ↑ / ↓ or by hovering). Key hints run along the bottom.
 
-- **页**：页面标题。插入 `[[标题]]`。
-- **块**：图谱里已有的 block，右侧灰字是它所在的页面。插入 block 引用，**不会**创建新页面。
+- Page: the title, how many blocks it has and how many linked references point to it, and an outline of the page.
+- Block: the page it's on, the block's text, and its children.
 
-block 搜索默认开启，最少 3 个字符才触发、最多显示 5 条，都可以在设置里改或直接关掉。
+The preview is read-only. It lightly styles `[[links]]`, `#tags`, `((references))` (shown as the referenced block's text), bold, italic, highlights, and code, and shows up to 28 blocks, 4 levels deep. In windows narrower than 640px, only the list is shown.
 
-## CJK 说明
+## Chinese, Japanese, and Korean
 
-- 输入法组词（拼音、假名等）期间不弹出，只在选字上屏后（`compositionend`）匹配。
-- 中文没有空格分词，插件会从光标往前取最多 N 个字符（设置里的「向前回看」），找**最长**能匹配到页面标题的后缀。例如已有页面「机器学习」，输入「今天在看机器」时会命中「机器」→「机器学习」。
+- Nothing pops up while your input method is composing (pinyin, kana, and so on). Matching starts once the text is committed (`compositionend`).
+- These languages don't put spaces between words, so the extension looks back up to *Lookback length* characters from the cursor and finds the **longest** ending that matches a page title. For example, with a page named 机器学习, typing 今天在看机器 matches 机器 and suggests 机器学习.
 
-## 设置
+## Settings
 
-Settings → Inline Autocomplete：最少触发字符数、回看长度、候选数量、延迟、是否排除日期页、插入格式。命令面板里有 `Inline Autocomplete: Toggle` 可以快速开关。
+Find them under Settings → Inline Autocomplete.
+
+| Setting | Default | What it does |
+|---|---|---|
+| Enable | On | Turns suggestions on or off |
+| Minimum characters | 2 | Characters needed before the cursor to start matching |
+| Lookback length | 24 | How far back to look for a match in languages without spaces |
+| Max page suggestions | 8 | How many pages to show |
+| Delay (ms) | 90 | How long to wait after you stop typing |
+| Skip daily notes pages | On | Leaves date pages out of the suggestions |
+| Page link format | `[[page]]` | Insert `[[page]]` or `#tag` |
+| Suggest blocks | On | Also suggest matching blocks |
+| Minimum characters for blocks | 3 | Characters needed before blocks are searched |
+| Max block suggestions | 5 | How many blocks to show |
+| Block reference format | `((uid))` | Insert `((uid))` or `[text](((uid)))` |
+
+The command palette has **Inline Autocomplete: Toggle** to turn suggestions on or off, and **Inline Autocomplete: Refresh page titles** to pick up pages created in the last 30 seconds.

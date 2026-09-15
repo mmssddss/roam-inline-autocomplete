@@ -1,10 +1,10 @@
 /**
  * Inline Autocomplete for Roam Research
  *
- * 不用输入 [[ ，边打字边弹出候选。候选分两类，下拉框里有明确标记：
- *   「页」 页面标题 → 插入 [[标题]]
- *   「块」 已有 block → 插入 ((uid))（或 [原文](((uid)))），不会新建页面
- * 弹框左右分栏：左边是候选列表，右边实时预览选中项（页面内容 / block 及其子块）。
+ * 不用输入 [[ ，边打字边弹出候选。候选分两类，列表里直接用 Roam 自己的写法区分：
+ *   页面：显示成 [[标题]]（或 #标题），插入的就是这个
+ *   block：显示成圆点 + 所在页面，插入 ((uid))（或 [原文](((uid)))），不会新建页面
+ * 弹框左右分栏：左边是候选列表，右边实时预览选中项（页面内容 / block 及其子块），底部是按键提示。
  * - Enter / Tab：把光标前的匹配文字替换成对应引用
  * - Esc：关闭候选（同一个词不再重复弹出，直到你换词）
  * - ↑ / ↓：选择候选
@@ -256,8 +256,16 @@ function ensurePopup() {
   if (popup) return popup;
   popup = document.createElement("div");
   popup.id = POPUP_ID;
-  popup.innerHTML =
-    '<div class="rr-ac-list" role="listbox"></div><div class="rr-ac-preview"></div>';
+  popup.innerHTML = `
+    <div class="rr-ac-main">
+      <div class="rr-ac-list" role="listbox" aria-label="Link suggestions"></div>
+      <div class="rr-ac-preview"></div>
+    </div>
+    <div class="rr-ac-foot">
+      <span><kbd>↑</kbd><kbd>↓</kbd> Select</span>
+      <span><kbd>↵</kbd> Insert</span>
+      <span><kbd>Esc</kbd> Dismiss</span>
+    </div>`;
   listEl = popup.querySelector(".rr-ac-list");
   previewEl = popup.querySelector(".rr-ac-preview");
   popup.addEventListener("mousedown", (e) => {
@@ -273,7 +281,7 @@ function ensurePopup() {
     const li = e.target.closest("[data-idx]");
     if (li && Number(li.dataset.idx) !== state.index) {
       state.index = Number(li.dataset.idx);
-      render();
+      render({ scroll: false }); // 悬停不滚动列表，免得列表在鼠标底下跳
     }
   });
   document.body.appendChild(popup);
@@ -306,26 +314,37 @@ function snippet(text, query, max = 70) {
   return (start > 0 ? "…" : "") + piece + (start + max < t.length ? "…" : "");
 }
 
-function renderItem(item, i) {
-  const active = i === state.index ? " is-active" : "";
-  if (item.type === "page") {
-    return `<div class="rr-ac-item rr-ac-page${active}" data-idx="${i}" role="option">
-      <span class="rr-ac-kind">页</span>
-      <span class="rr-ac-text">${highlight(item.title, item.q)}</span>
-    </div>`;
-  }
-  return `<div class="rr-ac-item rr-ac-block${active}" data-idx="${i}" role="option" title="${escHtml(item.text)}">
-    <span class="rr-ac-kind">块</span>
-    <span class="rr-ac-text">${highlight(snippet(item.text, item.q), item.q)}</span>
-    <span class="rr-ac-where">${escHtml(item.page)}</span>
+// 页面候选按插入后的样子显示：[[标题]]，或 #标题 / #[[标题]]
+function pageLabel(item) {
+  const br = (s) => `<span class="rr-ac-br">${s}</span>`;
+  const title = `<span class="rr-ac-title">${highlight(item.title, item.q)}</span>`;
+  if (setting("insertMode") !== "#tag") return br("[[") + title + br("]]");
+  return tagNeedsBrackets(item.title) ? br("#[[") + title + br("]]") : br("#") + title;
+}
+
+function renderItem(item, i, prev) {
+  const cls = [
+    "rr-ac-item",
+    item.type === "page" ? "rr-ac-page" : "rr-ac-block",
+    i === state.index ? "is-active" : "",
+    prev && prev.type !== item.type ? "rr-ac-group-start" : "", // 页面和 block 之间画分隔线
+  ].filter(Boolean).join(" ");
+  const attrs = `class="${cls}" data-idx="${i}" role="option" aria-selected="${i === state.index}"`;
+  if (item.type === "page") return `<div ${attrs}>${pageLabel(item)}</div>`;
+  return `<div ${attrs} title="${escHtml(item.text)}">
+    <span class="rr-ac-dot"></span>
+    <span class="rr-ac-body">
+      <span class="rr-ac-snippet">${highlight(snippet(item.text, item.q), item.q)}</span>
+      <span class="rr-ac-where">${escHtml(item.page)}</span>
+    </span>
   </div>`;
 }
 
-function render() {
+function render({ scroll = true } = {}) {
   ensurePopup();
-  listEl.innerHTML = state.items.map(renderItem).join("");
+  listEl.innerHTML = state.items.map((item, i) => renderItem(item, i, state.items[i - 1])).join("");
   const active = listEl.querySelector(".is-active");
-  if (active) active.scrollIntoView({ block: "nearest" });
+  if (scroll && active) active.scrollIntoView({ block: "nearest" });
   renderPreview(state.items[state.index]);
 }
 
@@ -394,21 +413,18 @@ function childrenOf(node) {
     .sort((a, b) => (a[":block/order"] || 0) - (b[":block/order"] || 0));
 }
 
-// 把子树渲染成缩进的圆点列表，超过预算就截断
+// 把子树渲染成嵌套的圆点大纲（子块左边有 Roam 那样的竖线），超过预算就截断
 function outlineHtml(nodes, depth, budget) {
-  const lines = [];
-  const walk = (list, d) => {
-    for (const n of list) {
-      if (budget.left <= 0) return;
-      if (d >= PREVIEW_MAX_DEPTH) return;
-      budget.left--;
-      const str = n[":block/string"] || "";
-      lines.push(`<div class="rr-pv-line" style="padding-left:${d * 14}px"><span class="rr-pv-dot"></span>${formatInline(str)}</div>`);
-      walk(childrenOf(n), d + 1);
-    }
-  };
-  walk(nodes, depth);
-  return lines.join("");
+  let html = "";
+  for (const n of nodes) {
+    if (budget.left <= 0 || depth >= PREVIEW_MAX_DEPTH) break;
+    budget.left--;
+    const kids = outlineHtml(childrenOf(n), depth + 1, budget);
+    html +=
+      `<div class="rr-pv-line"><span class="rr-pv-dot"></span><span>${formatInline(n[":block/string"] || "")}</span></div>` +
+      (kids ? `<div class="rr-pv-kids">${kids}</div>` : "");
+  }
+  return html;
 }
 
 function countNodes(nodes) {
@@ -418,36 +434,34 @@ function countNodes(nodes) {
   return n;
 }
 
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+// 大纲 + 没显示完的条数；没有子块时返回空串，预览里就不画分隔线
+function outlineBody(kids, total) {
+  if (!kids.length) return "";
+  const budget = { left: PREVIEW_MAX_LINES };
+  const html = outlineHtml(kids, 0, budget);
+  const hidden = total - (PREVIEW_MAX_LINES - budget.left);
+  const more = hidden > 0 ? `<div class="rr-pv-more">${plural(hidden, "more block")}</div>` : "";
+  return `<div class="rr-pv-body">${html}${more}</div>`;
+}
+
 function buildPreview(item) {
   if (item.type === "page") {
-    const tree = pullTree([":node/title", item.title]);
-    const kids = childrenOf(tree);
+    const kids = childrenOf(pullTree([":node/title", item.title]));
     const total = countNodes(kids);
-    const refs = backlinkCount(item.title);
-    const budget = { left: PREVIEW_MAX_LINES };
-    const body = kids.length
-      ? outlineHtml(kids, 0, budget)
-      : '<div class="rr-pv-empty">空页面</div>';
-    const more = total > PREVIEW_MAX_LINES ? `<div class="rr-pv-more">…还有 ${total - PREVIEW_MAX_LINES} 条</div>` : "";
+    const refs = plural(backlinkCount(item.title), "linked reference");
     return `
-      <div class="rr-pv-head">
-        <div class="rr-pv-title">${escHtml(item.title)}</div>
-        <div class="rr-pv-meta">${refs} 处引用 · ${total} 个 block</div>
-      </div>
-      <div class="rr-pv-body">${body}${more}</div>`;
+      <div class="rr-pv-title">${escHtml(item.title)}</div>
+      <div class="rr-pv-meta">${total ? `${plural(total, "block")}, ${refs}` : refs}</div>
+      ${outlineBody(kids, total) || '<div class="rr-pv-empty">No blocks on this page yet.</div>'}`;
   }
 
-  const tree = pullTree([":block/uid", item.uid]);
-  const kids = childrenOf(tree);
-  const total = countNodes(kids);
-  const budget = { left: PREVIEW_MAX_LINES };
-  const more = total > PREVIEW_MAX_LINES ? `<div class="rr-pv-more">…还有 ${total - PREVIEW_MAX_LINES} 条</div>` : "";
+  const kids = childrenOf(pullTree([":block/uid", item.uid]));
   return `
-    <div class="rr-pv-head">
-      <div class="rr-pv-meta">在 <span class="rr-pv-link">${escHtml(item.page)}</span></div>
-      <div class="rr-pv-root">${formatInline(item.text)}</div>
-    </div>
-    <div class="rr-pv-body">${kids.length ? outlineHtml(kids, 0, budget) : ""}${more}</div>`;
+    <div class="rr-pv-crumb">${escHtml(item.page)}</div>
+    <div class="rr-pv-root">${formatInline(item.text)}</div>
+    ${outlineBody(kids, countNodes(kids))}`;
 }
 
 function renderPreview(item) {
@@ -466,8 +480,8 @@ function place() {
   const ta = state.textarea;
   const r = caretRect(ta, ta.selectionStart);
   el.style.display = "flex";
-  const w = el.offsetWidth || 620;
-  const h = el.offsetHeight || 320;
+  const w = el.offsetWidth || 660;
+  const h = el.offsetHeight || 340;
   let left = Math.min(r.left, window.innerWidth - w - 8);
   let top = r.top + r.height + 4;
   if (top + h > window.innerHeight - 8) top = r.top - h - 4; // 放不下就往上翻
@@ -504,10 +518,15 @@ const nativeSetValue = Object.getOwnPropertyDescriptor(
   "value"
 ).set;
 
+// 带空格或方括号的标题做标签时要写成 #[[标题]]
+function tagNeedsBrackets(title) {
+  return /[\s\[\]]/.test(title);
+}
+
 function buildInsert(item) {
   if (item.type === "page") {
     const t = item.title;
-    if (setting("insertMode") === "#tag") return /[\s\[\]]/.test(t) ? `#[[${t}]]` : `#${t}`;
+    if (setting("insertMode") === "#tag") return tagNeedsBrackets(t) ? `#[[${t}]]` : `#${t}`;
     return `[[${t}]]`;
   }
   // block：永远引用 uid，不会创建新页面
@@ -637,8 +656,11 @@ function onGlobalMouseDown(e) {
   if (state.open && popup && !popup.contains(e.target)) close();
 }
 
-function onScroll() {
-  if (state.open) close();
+// 页面滚动或窗口变化时关掉；弹层自己的列表 / 预览在滚动不算
+function onScroll(e) {
+  if (!state.open) return;
+  if (popup && e.target instanceof Node && popup.contains(e.target)) return;
+  close();
 }
 
 function on(target, type, fn, opts) {
@@ -650,97 +672,175 @@ function on(target, type, fn, opts) {
 /* 样式                                                                */
 /* ------------------------------------------------------------------ */
 
+// 颜色都是 #rr-inline-ac 上的 CSS 变量，深色主题只覆盖变量
 const CSS = `
 #${POPUP_ID} {
+  --ac-bg: #ffffff;
+  --ac-pane: #f5f8fa;
+  --ac-text: #182026;
+  --ac-muted: #5c7080;
+  --ac-faint: #a7b6c2;
+  --ac-bullet: #8a9ba8;
+  --ac-line: rgba(16, 22, 26, 0.1);
+  --ac-accent: #106ba3;
+  --ac-active: rgba(19, 124, 189, 0.1);
+  --ac-mark: #fef09f;
+  --ac-shadow: 0 0 0 1px rgba(16, 22, 26, 0.1), 0 2px 4px rgba(16, 22, 26, 0.1), 0 10px 30px -6px rgba(16, 22, 26, 0.25);
+
   position: fixed;
   z-index: 9999;
   display: none;
-  width: 640px;
+  flex-direction: column;
+  width: 660px;
   max-width: calc(100vw - 16px);
-  height: 320px;
-  border-radius: 4px;
-  background: #fff;
-  color: #202b33;
-  box-shadow: 0 0 0 1px rgba(16,22,26,.1), 0 2px 8px rgba(16,22,26,.2);
+  height: 340px;
+  max-height: calc(100vh - 16px);
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--ac-bg);
+  color: var(--ac-text);
+  box-shadow: var(--ac-shadow);
   font-size: 14px;
   line-height: 1.4;
-  overflow: hidden;
+  animation: rr-ac-in 100ms ease-out;
 }
+@keyframes rr-ac-in { from { opacity: 0; } }
+
+#${POPUP_ID} .rr-ac-main { display: flex; flex: 1 1 auto; min-height: 0; }
 
 /* 左：候选列表 */
 #${POPUP_ID} .rr-ac-list {
-  flex: 0 0 260px;
+  flex: 0 0 280px;
   overflow-y: auto;
-  padding: 4px 0;
-  border-right: 1px solid rgba(16,22,26,.12);
+  padding: 4px;
+  scrollbar-width: thin;
 }
 #${POPUP_ID} .rr-ac-item {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 5px 10px;
+  position: relative;
+  padding: 5px 8px;
+  border-radius: 5px;
   cursor: pointer;
   white-space: nowrap;
 }
-#${POPUP_ID} .rr-ac-kind {
-  flex: none;
-  font-size: 11px;
-  line-height: 16px;
-  padding: 0 5px;
-  border-radius: 3px;
-  background: #e1e8ed;
-  color: #5c7080;
+#${POPUP_ID} .rr-ac-item.is-active { background: var(--ac-active); }
+#${POPUP_ID} .rr-ac-item b { font-weight: 600; color: var(--ac-accent); }
+#${POPUP_ID} .rr-ac-item.rr-ac-group-start { margin-top: 9px; }
+#${POPUP_ID} .rr-ac-group-start::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: 8px;
+  right: 8px;
+  border-top: 1px solid var(--ac-line);
 }
-#${POPUP_ID} .rr-ac-block .rr-ac-kind { background: #fff3d6; color: #a05a00; }
-#${POPUP_ID} .rr-ac-text { flex: 1; overflow: hidden; text-overflow: ellipsis; }
-#${POPUP_ID} .rr-ac-where { flex: none; max-width: 90px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; opacity: .6; }
-#${POPUP_ID} .rr-ac-item b { font-weight: 600; color: #137cbd; }
-#${POPUP_ID} .rr-ac-item.is-active { background: #137cbd; color: #fff; }
-#${POPUP_ID} .rr-ac-item.is-active b { color: #fff; }
-#${POPUP_ID} .rr-ac-item.is-active .rr-ac-kind { background: rgba(255,255,255,.25); color: #fff; }
-#${POPUP_ID} .rr-ac-item.is-active .rr-ac-where { opacity: .85; }
 
-/* 右：预览 */
+/* 页面行：[[标题]]，括号淡色，标题太长时括号保留、标题省略 */
+#${POPUP_ID} .rr-ac-page { display: flex; align-items: baseline; }
+#${POPUP_ID} .rr-ac-br { flex: none; color: var(--ac-faint); }
+#${POPUP_ID} .rr-ac-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* block 行：圆点 + 两行（原文 / 所在页面） */
+#${POPUP_ID} .rr-ac-block { display: flex; align-items: flex-start; gap: 9px; }
+#${POPUP_ID} .rr-ac-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  margin: calc(0.7em - 2.5px) 0 0 2px;
+  border-radius: 50%;
+  background: var(--ac-bullet);
+}
+#${POPUP_ID} .rr-ac-body { display: flex; flex-direction: column; min-width: 0; }
+#${POPUP_ID} .rr-ac-snippet, #${POPUP_ID} .rr-ac-where { overflow: hidden; text-overflow: ellipsis; }
+#${POPUP_ID} .rr-ac-where { font-size: 12px; color: var(--ac-muted); }
+
+/* 右：预览，排得像一个缩小的 Roam 页面 */
 #${POPUP_ID} .rr-ac-preview {
   flex: 1 1 auto;
   min-width: 0;
   overflow-y: auto;
-  padding: 10px 12px;
-  background: #f8f9fa;
+  padding: 14px 16px;
+  border-left: 1px solid var(--ac-line);
+  background: var(--ac-pane);
   font-size: 13px;
+  line-height: 1.5;
+  word-break: break-word;
+  scrollbar-width: thin;
 }
-#${POPUP_ID} .rr-pv-head { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(16,22,26,.1); }
-#${POPUP_ID} .rr-pv-title { font-size: 15px; font-weight: 600; word-break: break-word; }
-#${POPUP_ID} .rr-pv-meta { font-size: 12px; opacity: .65; margin-top: 2px; }
-#${POPUP_ID} .rr-pv-root { margin-top: 4px; font-weight: 500; word-break: break-word; }
-#${POPUP_ID} .rr-pv-line { position: relative; padding-right: 4px; margin: 1px 0; word-break: break-word; white-space: normal; }
-#${POPUP_ID} .rr-pv-dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #8a9ba8; margin: 0 7px 3px 0; }
-#${POPUP_ID} .rr-pv-link { color: #137cbd; }
-#${POPUP_ID} .rr-pv-ref { border-bottom: 1px solid rgba(19,124,189,.4); }
-#${POPUP_ID} .rr-pv-empty, #${POPUP_ID} .rr-pv-more { opacity: .55; font-style: italic; margin-top: 4px; }
-#${POPUP_ID} code { font-size: 12px; padding: 0 3px; background: rgba(16,22,26,.07); border-radius: 3px; }
-#${POPUP_ID} mark { background: #ffe39f; color: inherit; }
+#${POPUP_ID} .rr-pv-title { font-size: 17px; font-weight: 600; line-height: 1.3; }
+#${POPUP_ID} .rr-pv-meta, #${POPUP_ID} .rr-pv-crumb { font-size: 12px; color: var(--ac-muted); }
+#${POPUP_ID} .rr-pv-meta { margin-top: 3px; }
+#${POPUP_ID} .rr-pv-crumb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#${POPUP_ID} .rr-pv-root { margin-top: 2px; font-size: 14px; font-weight: 500; }
+#${POPUP_ID} .rr-pv-body { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--ac-line); }
+#${POPUP_ID} .rr-pv-line { display: flex; gap: 8px; padding: 1px 0; }
+#${POPUP_ID} .rr-pv-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  margin-top: calc(0.75em - 2.5px);
+  border-radius: 50%;
+  background: var(--ac-bullet);
+}
+#${POPUP_ID} .rr-pv-kids { margin-left: 2px; padding-left: 13px; border-left: 1px solid var(--ac-line); }
+#${POPUP_ID} .rr-pv-link { color: var(--ac-accent); }
+#${POPUP_ID} .rr-pv-ref { border-bottom: 1px solid var(--ac-faint); }
+#${POPUP_ID} .rr-pv-empty, #${POPUP_ID} .rr-pv-more { margin-top: 8px; font-size: 12px; color: var(--ac-muted); }
+#${POPUP_ID} code { padding: 0 3px; border-radius: 3px; background: var(--ac-line); font-size: 12px; }
+#${POPUP_ID} mark { padding: 0 1px; border-radius: 2px; background: var(--ac-mark); color: inherit; }
+
+/* 底部：按键提示 */
+#${POPUP_ID} .rr-ac-foot {
+  display: flex;
+  flex: none;
+  gap: 16px;
+  padding: 6px 12px;
+  overflow: hidden;
+  border-top: 1px solid var(--ac-line);
+  color: var(--ac-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+#${POPUP_ID} kbd {
+  display: inline-block;
+  box-sizing: border-box;
+  min-width: 17px;
+  margin-right: 3px;
+  padding: 0 4px;
+  border: 1px solid var(--ac-line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--ac-bg);
+  color: var(--ac-text);
+  font: inherit;
+  font-size: 11px;
+  line-height: 15px;
+  text-align: center;
+}
 
 @media (max-width: 640px) {
-  #${POPUP_ID} { width: auto; height: auto; max-height: 300px; }
-  #${POPUP_ID} .rr-ac-list { flex: 1 1 auto; border-right: 0; }
+  #${POPUP_ID} { width: min(320px, calc(100vw - 16px)); height: auto; max-height: 300px; }
+  #${POPUP_ID} .rr-ac-list { flex: 1 1 auto; }
   #${POPUP_ID} .rr-ac-preview { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #${POPUP_ID} { animation: none; }
 }
 
 /* 深色主题 */
 .bp3-dark #${POPUP_ID}, .dark-theme #${POPUP_ID}, [data-theme="dark"] #${POPUP_ID} {
-  background: #30404d;
-  color: #f5f8fa;
-  box-shadow: 0 0 0 1px rgba(16,22,26,.4), 0 2px 8px rgba(16,22,26,.6);
+  --ac-bg: #30404d;
+  --ac-pane: #293742;
+  --ac-text: #f5f8fa;
+  --ac-muted: #b8c5cf;
+  --ac-faint: #738694;
+  --ac-bullet: #8a9ba8;
+  --ac-line: rgba(255, 255, 255, 0.12);
+  --ac-accent: #7ac5f5;
+  --ac-active: rgba(72, 175, 240, 0.12);
+  --ac-mark: #7a5b00;
+  --ac-shadow: 0 0 0 1px rgba(16, 22, 26, 0.4), 0 2px 4px rgba(16, 22, 26, 0.4), 0 10px 30px -6px rgba(16, 22, 26, 0.7);
 }
-.bp3-dark #${POPUP_ID} .rr-ac-list { border-right-color: rgba(255,255,255,.12); }
-.bp3-dark #${POPUP_ID} .rr-ac-preview { background: #293742; }
-.bp3-dark #${POPUP_ID} .rr-pv-head { border-bottom-color: rgba(255,255,255,.12); }
-.bp3-dark #${POPUP_ID} .rr-ac-item b, .bp3-dark #${POPUP_ID} .rr-pv-link { color: #48aff0; }
-.bp3-dark #${POPUP_ID} .rr-ac-kind { background: #394b59; color: #a7b6c2; }
-.bp3-dark #${POPUP_ID} .rr-ac-block .rr-ac-kind { background: #5c4a1a; color: #ffc940; }
-.bp3-dark #${POPUP_ID} code { background: rgba(255,255,255,.1); }
-.bp3-dark #${POPUP_ID} mark { background: #7a5b00; color: #fff; }
 `;
 
 function injectStyle() {
@@ -763,68 +863,68 @@ function onload({ extensionAPI }) {
     settings: [
       {
         id: "enabled",
-        name: "启用",
-        description: "打字时自动弹出页面标题候选（不需要输入 [[）。",
+        name: "Enable",
+        description: "Suggest pages and blocks as you type, without typing [[ first.",
         action: { type: "switch" },
       },
       {
         id: "minChars",
-        name: "最少触发字符数",
-        description: "光标前至少有多少个字符才开始匹配。中文建议 1 或 2，英文建议 2 或 3。默认 2。",
+        name: "Minimum characters",
+        description: "Characters needed before the cursor to start matching. 1–2 works well for Chinese, Japanese, and Korean; 2–3 for English. Default: 2.",
         action: { type: "input", placeholder: "2" },
       },
       {
         id: "maxLookback",
-        name: "向前回看的最大字符数",
-        description: "没有空格的语言（中日韩）会从光标往前取这么多字符去找最长匹配。默认 24。",
+        name: "Lookback length",
+        description: "For languages written without spaces (Chinese, Japanese, Korean), how many characters before the cursor to search for the longest matching page title. Default: 24.",
         action: { type: "input", placeholder: "24" },
       },
       {
         id: "maxResults",
-        name: "最多显示候选数",
-        description: "默认 8。",
+        name: "Max page suggestions",
+        description: "Default: 8.",
         action: { type: "input", placeholder: "8" },
       },
       {
         id: "debounceMs",
-        name: "延迟（毫秒）",
-        description: "停止输入多少毫秒后再匹配。默认 90。",
+        name: "Delay (ms)",
+        description: "How long to wait after you stop typing before looking for matches. Default: 90.",
         action: { type: "input", placeholder: "90" },
       },
       {
         id: "excludeDates",
-        name: "排除日期页面",
-        description: "不把 Daily Notes 的日期页面当作候选。",
+        name: "Skip daily notes pages",
+        description: "Don't suggest date pages like January 1st, 2026.",
         action: { type: "switch" },
       },
       {
         id: "insertMode",
-        name: "页面插入格式",
-        description: "选中页面候选后插入 [[页面]] 还是 #标签。",
+        name: "Page link format",
+        description: "What to insert when you pick a page: [[page]] or #tag.",
         action: { type: "select", items: ["[[page]]", "#tag"] },
       },
       {
         id: "blockSearch",
-        name: "同时搜索 block",
-        description: "在页面候选后面附上匹配的 block，标记为「块」，选中后插入 block 引用而不是新建页面。",
+        name: "Suggest blocks",
+        description: "Also suggest existing blocks that match, listed after pages. Picking one inserts a block reference, so no new page is created.",
         action: { type: "switch" },
       },
       {
         id: "blockMinChars",
-        name: "block 最少触发字符数",
-        description: "block 数量多、噪音大，建议比页面高一些。默认 3。",
+        name: "Minimum characters for blocks",
+        description: "Block matches are noisier than page matches, so a higher threshold helps. Default: 3.",
         action: { type: "input", placeholder: "3" },
       },
       {
         id: "blockMaxResults",
-        name: "block 最多显示数",
-        description: "默认 5。",
+        name: "Max block suggestions",
+        description: "Default: 5.",
         action: { type: "input", placeholder: "5" },
       },
       {
         id: "blockInsertMode",
-        name: "block 插入格式",
-        description: "((uid)) 是普通块引用；[text](((uid))) 会把块原文作为显示文字。",
+        name: "Block reference format",
+        description: "((uid)) inserts a plain block reference. [text](((uid))) uses the block's text as the link label.",
         action: { type: "select", items: ["((uid))", "[text](((uid)))"] },
       },
     ],
