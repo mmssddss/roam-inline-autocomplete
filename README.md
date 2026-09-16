@@ -2,21 +2,24 @@
 
 Page and block suggestions pop up as you type, without typing `[[` first. Works with Chinese, Japanese, and Korean input methods.
 
-## Install (local developer extension)
+## Install
 
-1. Put the `roam-inline-autocomplete` folder anywhere on your computer.
+Single file, no build step and no dependencies — `extension.js` is the whole extension.
+
+1. Clone or download this repository.
 2. In Roam, open Settings → Roam Depot and turn on **Enable developer mode** (the ⚙ in the top-right corner).
-3. Under Developer Extensions, click **Load extension** and choose this folder.
+3. Under Developer Extensions, click **Load extension** and choose the folder.
 4. After editing `extension.js`, click **Reload** in the same place.
 
 ## Usage
 
 | Key | What it does |
 |---|---|
-| Type as usual | When the text before the cursor matches a page title, suggestions appear |
+| Type as usual | Suggestions appear when the text before the cursor matches a page title, or the text of a block |
 | ↑ / ↓ | Move through the suggestions |
 | Enter / Tab | Page: replaces the matched text with `[[Title]]` (or `#tag`). Block: replaces it with `((uid))` (or `[text](((uid)))`) |
-| Esc | Close the suggestions. They won't reappear for the same word until you type a different word or move to another block |
+| Click | Inserts the suggestion you clicked, same as Enter |
+| Esc | Close the suggestions. They stay closed while you keep typing that same word, and come back once you delete part of it, move on to another word, or switch blocks |
 
 To stay out of the way of Roam's own autocomplete, nothing pops up inside `[[ ]]`, `(( ))`, `{{ }}`, `#tag`, `/commands`, `attribute::`, or ``` code blocks.
 
@@ -38,7 +41,7 @@ The popup has two panes: suggestions on the left and a live preview of the selec
 - Page: the title, how many blocks it has and how many linked references point to it, and an outline of the page.
 - Block: the page it's on, the block's text, and its children.
 
-The preview is read-only. It lightly styles `[[links]]`, `#tags`, `((references))` (shown as the referenced block's text), bold, italic, highlights, and code, and shows up to 28 blocks, 4 levels deep. In windows narrower than 640px, only the list is shown.
+The preview is read-only. It lightly styles `[[links]]`, `#tags`, `((references))` (shown as the referenced block's text), bold, italic, highlights, code, and `{{[[TODO]]}}` / `{{[[DONE]]}}` checkboxes, and shows up to 28 blocks, 4 levels deep. In windows narrower than 640px, only the list is shown.
 
 ## Appearance
 
@@ -64,7 +67,7 @@ Find them under Settings → Inline Autocomplete.
 | Setting | Default | What it does |
 |---|---|---|
 | Enable | On | Turns suggestions on or off |
-| Minimum characters | 2 | Characters needed before the cursor to start matching |
+| Minimum characters | 2 | Characters needed before the cursor before pages are matched (blocks have their own setting below) |
 | Lookback length | 24 | How far back to look for a match in languages without spaces |
 | Max page suggestions | 25 | How many pages to show (the list scrolls) |
 | Delay (ms) | 0 | How long to wait after you stop typing. Raise it if typing feels sluggish in a big graph |
