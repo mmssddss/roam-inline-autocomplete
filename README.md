@@ -40,6 +40,8 @@ Pages come first, then blocks, with a divider in between. Block search is on by 
 
 The popup has two panes: suggestions on the left and a live preview of the selected one on the right (switch with ↑ / ↓ or by hovering). Key hints run along the bottom.
 
+![The popup split in two: page and block suggestions on the left, and on the right the selected block with the page it lives on and its children](resource/preview.png)
+
 - Page: the title, how many blocks it has and how many linked references point to it, and an outline of the page.
 - Block: the page it's on, the block's text, and its children.
 
