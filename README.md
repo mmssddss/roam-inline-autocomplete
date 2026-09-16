@@ -2,6 +2,8 @@
 
 Page and block suggestions pop up as you type, without typing `[[` first. Works with Chinese, Japanese, and Korean input methods.
 
+![Typing pinyin in Roam: nothing interrupts while the IME is composing, then page and block suggestions appear and insert a page link and a block reference](resource/auto-completion.gif)
+
 ## Install
 
 Single file, no build step and no dependencies — `extension.js` is the whole extension.

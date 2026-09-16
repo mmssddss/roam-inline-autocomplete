@@ -7,6 +7,7 @@ Roam Research 插件（Roam Depot 扩展格式）。在 block 编辑框里边打
 - `extension.js`：全部代码。ES module，`export default { onload, onunload }`，Roam 直接加载这个文件。
 - `README.md`：给用户看的安装、用法、设置说明。
 - `LICENSE`：MIT。
+- `resource/`：README 用到的图，目前只有一个演示 GIF。
 
 没有 package.json、依赖、构建步骤和自动化测试。除非我明确要求，不要引入 npm 包、打包工具或 TypeScript。
 
