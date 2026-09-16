@@ -41,6 +41,7 @@ Roam Research 插件（Roam Depot 扩展格式）。在 block 编辑框里边打
 - **能卸载干净**：Roam 会在不刷新页面的情况下 reload / 卸载扩展。事件监听一律通过 `on()` 注册（记进 `listeners`，`onunload` 统一移除）；新加的 DOM 节点、定时器也要在 `onunload` 里清掉。
 - **写 textarea 必须用 `nativeSetValue` 并派发 `input` 事件**。直接 `ta.value = ...` 不会同步到 Roam 的 React 状态。写之前设 `state.ignoreNextInput = true`，不然自己派发的 input 会再次触发候选。
 - **只在弹层打开时拦截按键**。`onKeyDown` 在捕获阶段 `stopImmediatePropagation`，是为了抢在 Roam 之前处理 Enter / Tab；弹层关着时必须原样放行，否则会破坏 Roam 的正常编辑。
+- **Enter 默认不归弹层管**。弹层是自己冒出来的，用户多半只是想换行，所以只有按过 ↑↓（`state.navigated`，由 `markNavigated()` 置位，鼠标悬停不算）Enter 才插入；没按过就 `close()` 后直接 `return`，不要 `preventDefault`。Tab 始终插入。底部提示靠 `#rr-inline-ac.is-navigated` 切换两组文案，改按键逻辑时记得一起改。
 - **IME**：`state.composing` 为真时什么都不做，只在 `compositionend` 之后匹配。改输入相关逻辑时不要破坏这一点。
 - **不和 Roam 原生补全抢**：哪些位置不触发由 `insideRoamSyntax` 和 `roamAutocompleteVisible` 决定，新的排除规则加在 `insideRoamSyntax` 里。
 - **弹层内部的滚动不能关弹层**：scroll 监听挂在 window 的捕获阶段，会收到所有元素的滚动；`onScroll` 必须跳过来自弹层内部的事件，否则列表一滚动（包括 ↑↓ 触发的 `scrollIntoView`）弹层就没了。

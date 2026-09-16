@@ -46,6 +46,7 @@ let state = {
   textarea: null,
   query: "", // 被匹配的那段文字（光标前的后缀）
   dismissedTail: null, // Esc 之后记住当前词，避免继续弹
+  navigated: false, // 按过 ↑↓ 才算有插入意图，Enter 这时才归弹层管
   composing: false,
   timer: null,
   ignoreNextInput: false,
@@ -282,7 +283,9 @@ function ensurePopup() {
     </div>
     <div class="rr-ac-foot">
       <span><kbd>↑</kbd><kbd>↓</kbd> Select</span>
-      <span><kbd>↵</kbd> Insert</span>
+      <span class="rr-ac-hint-idle"><kbd>Tab</kbd> Insert</span>
+      <span class="rr-ac-hint-idle rr-ac-dim"><kbd>↵</kbd> New line</span>
+      <span class="rr-ac-hint-nav"><kbd>↵</kbd> Insert</span>
       <span><kbd>Esc</kbd> Dismiss</span>
     </div>`;
   listEl = popup.querySelector(".rr-ac-list");
@@ -361,6 +364,12 @@ function render() {
   ensurePopup();
   listEl.innerHTML = state.items.map((item, i) => renderItem(item, i, state.items[i - 1])).join("");
   renderPreview(state.items[state.index]);
+}
+
+// 按过 ↑↓ 就算表达了插入意图，Enter 从此归弹层管（鼠标悬停不算，免得路过就改键义）
+function markNavigated() {
+  state.navigated = true;
+  if (popup) popup.classList.add("is-navigated");
 }
 
 // 只换高亮那一行。候选可以有几十条，↑↓ 每按一次都重建整个列表会肉眼可见地卡
@@ -529,7 +538,9 @@ function openWith(textarea, tail, items) {
   state.query = tail; // 当前整个词，Esc 时记住它
   state.items = items;
   state.index = 0;
+  state.navigated = false;
   ensurePopup();
+  popup.classList.remove("is-navigated");
   applyTheme();
   render();
   place();
@@ -662,12 +673,22 @@ function onKeyDown(e) {
   if (state.composing) return;
   switch (e.key) {
     case "ArrowDown":
+      markNavigated();
       setActive((state.index + 1) % state.items.length);
       break;
     case "ArrowUp":
+      markNavigated();
       setActive((state.index - 1 + state.items.length) % state.items.length);
       break;
     case "Enter":
+      // 弹层是自己冒出来的，用户多半只是想换行。没按过 ↑↓ 就不抢这个键，
+      // 关掉弹层后原样放行给 Roam（别 preventDefault，直接 return）
+      if (!state.navigated) {
+        close();
+        return;
+      }
+      commit();
+      break;
     case "Tab":
       commit();
       break;
@@ -848,6 +869,11 @@ const CSS = `
 #${POPUP_ID} mark { padding: 0 1px; border-radius: 2px; background: var(--ac-mark); color: var(--ac-mark-text, inherit); }
 
 /* 底部：按键提示 */
+/* 没按过 ↑↓ 时 Enter 还归 Roam 管，提示跟着变，不用猜当前是哪种状态 */
+#${POPUP_ID} .rr-ac-hint-nav { display: none; }
+#${POPUP_ID}.is-navigated .rr-ac-hint-idle { display: none; }
+#${POPUP_ID}.is-navigated .rr-ac-hint-nav { display: inline; }
+#${POPUP_ID} .rr-ac-dim { color: var(--ac-faint); }
 #${POPUP_ID} .rr-ac-foot {
   display: flex;
   flex: none;
@@ -880,6 +906,7 @@ const CSS = `
   #${POPUP_ID} { width: min(320px, calc(100vw - 16px)); height: auto; max-height: 300px; }
   #${POPUP_ID} .rr-ac-list { flex: 1 1 auto; }
   #${POPUP_ID} .rr-ac-preview { display: none; }
+  #${POPUP_ID} .rr-ac-dim { display: none; } /* 底部一行放不下，先舍这条 */
 }
 
 @media (prefers-reduced-motion: reduce) {

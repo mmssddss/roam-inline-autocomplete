@@ -15,7 +15,8 @@ Page and block suggestions pop up as you type, without typing `[[` first. Works 
 |---|---|
 | Type as usual | When the text before the cursor matches a page title, suggestions appear |
 | ↑ / ↓ | Move through the suggestions |
-| Enter / Tab | Page: replaces the matched text with `[[Title]]` (or `#tag`). Block: replaces it with `((uid))` (or `[text](((uid)))`) |
+| Tab | Insert the selected suggestion. Page: replaces the matched text with `[[Title]]` (or `#tag`). Block: replaces it with `((uid))` (or `[text](((uid)))`) |
+| Enter | **Only inserts once you've pressed ↑ or ↓.** Until then it goes to Roam as usual and starts a new block — the popup appears on its own while you type, so it doesn't take over the key you press most |
 | Esc | Close the suggestions. They won't reappear for the same word until you type a different word or move to another block |
 
 To stay out of the way of Roam's own autocomplete, nothing pops up inside `[[ ]]`, `(( ))`, `{{ }}`, `#tag`, `/commands`, `attribute::`, or ``` code blocks.
