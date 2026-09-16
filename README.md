@@ -15,8 +15,7 @@ Page and block suggestions pop up as you type, without typing `[[` first. Works 
 |---|---|
 | Type as usual | When the text before the cursor matches a page title, suggestions appear |
 | ↑ / ↓ | Move through the suggestions |
-| Tab | Insert the selected suggestion. Page: replaces the matched text with `[[Title]]` (or `#tag`). Block: replaces it with `((uid))` (or `[text](((uid)))`) |
-| Enter | **Only inserts once you've pressed ↑ or ↓.** Until then it goes to Roam as usual and starts a new block — the popup appears on its own while you type, so it doesn't take over the key you press most |
+| Enter / Tab | Page: replaces the matched text with `[[Title]]` (or `#tag`). Block: replaces it with `((uid))` (or `[text](((uid)))`) |
 | Esc | Close the suggestions. They won't reappear for the same word until you type a different word or move to another block |
 
 To stay out of the way of Roam's own autocomplete, nothing pops up inside `[[ ]]`, `(( ))`, `{{ }}`, `#tag`, `/commands`, `attribute::`, or ``` code blocks.
@@ -68,7 +67,7 @@ Find them under Settings → Inline Autocomplete.
 | Minimum characters | 2 | Characters needed before the cursor to start matching |
 | Lookback length | 24 | How far back to look for a match in languages without spaces |
 | Max page suggestions | 25 | How many pages to show (the list scrolls) |
-| Delay (ms) | 90 | How long to wait after you stop typing |
+| Delay (ms) | 0 | How long to wait after you stop typing. Raise it if typing feels sluggish in a big graph |
 | Skip daily notes pages | On | Leaves date pages out of the suggestions |
 | Page link format | `[[page]]` | Insert `[[page]]` or `#tag` |
 | Suggest blocks | On | Also suggest matching blocks |

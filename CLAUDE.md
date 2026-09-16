@@ -41,7 +41,6 @@ Roam Research 插件（Roam Depot 扩展格式）。在 block 编辑框里边打
 - **能卸载干净**：Roam 会在不刷新页面的情况下 reload / 卸载扩展。事件监听一律通过 `on()` 注册（记进 `listeners`，`onunload` 统一移除）；新加的 DOM 节点、定时器也要在 `onunload` 里清掉。
 - **写 textarea 必须用 `nativeSetValue` 并派发 `input` 事件**。直接 `ta.value = ...` 不会同步到 Roam 的 React 状态。写之前设 `state.ignoreNextInput = true`，不然自己派发的 input 会再次触发候选。
 - **只在弹层打开时拦截按键**。`onKeyDown` 在捕获阶段 `stopImmediatePropagation`，是为了抢在 Roam 之前处理 Enter / Tab；弹层关着时必须原样放行，否则会破坏 Roam 的正常编辑。
-- **Enter 默认不归弹层管**。弹层是自己冒出来的，用户多半只是想换行，所以只有按过 ↑↓（`state.navigated`，由 `markNavigated()` 置位，鼠标悬停不算）Enter 才插入；没按过就 `close()` 后直接 `return`，不要 `preventDefault`。Tab 始终插入。底部提示靠 `#rr-inline-ac.is-navigated` 切换两组文案，改按键逻辑时记得一起改。
 - **IME**：`state.composing` 为真时什么都不做，只在 `compositionend` 之后匹配。改输入相关逻辑时不要破坏这一点。
 - **不和 Roam 原生补全抢**：哪些位置不触发由 `insideRoamSyntax` 和 `roamAutocompleteVisible` 决定，新的排除规则加在 `insideRoamSyntax` 里。
 - **弹层内部的滚动不能关弹层**：scroll 监听挂在 window 的捕获阶段，会收到所有元素的滚动；`onScroll` 必须跳过来自弹层内部的事件，否则列表一滚动（包括 ↑↓ 触发的 `scrollIntoView`）弹层就没了。
@@ -49,6 +48,7 @@ Roam Research 插件（Roam Depot 扩展格式）。在 block 编辑框里边打
 - **Datalog 查询**：用户输入作为 `:in` 参数传，不要拼进查询字符串；放进正则前先 `escapeRegex`。block 过滤留在 datascript 里做，不要把全图谱的 block 拉到 JS 里再筛，大图谱会卡。
 - **主题色都要过对比度**：`deriveTheme()` 里正文、次要文字、强调色、高亮文字在各自底色上都要 ≥ 4.5:1。主题给的颜色差一点点时用 `fitContrast()` 保住色相微调明度，不要直接丢掉换成正文色（Roam 自带深色的链接蓝就只有 4.4:1）；底色和正文本身就读不了才整体返回 `null` 回到 CSS 兜底。
 - **探针不能留在页面上**：`sampleRoamDom()` 插的离屏节点必须在 `finally` 里删掉，它只是用来量颜色的，别让 Roam 的 React 树看到多余节点。
+- **弹层必须赶在下一次按键之前出现**：`debounceMs` 默认 0，弹层也没有淡入动画。Enter 默认插入第一个候选，所以晚一拍冒出来的弹层会把用户正要按的换行键抢走 —— 这是刻意取舍，别为了「顺滑」把默认延迟或入场动画加回来。
 - **命名前缀**：DOM id / class 用 `rr-inline-ac`、`rr-ac-`、`rr-pv-` 前缀，CSS 选择器都挂在 `#rr-inline-ac` 下面，避免影响 Roam 自己的样式。
 - **依赖 Roam DOM 约定的地方比较脆**：block 输入框靠 `textarea.rm-block-input` 识别；当前 block uid 取 textarea id 的最后 9 个字符；原生补全是否打开看 `.rm-autocomplete__results`；深色主题看 `.bp3-dark` 等祖先 class。Roam 改版后出问题先查这几处。
 
