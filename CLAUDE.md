@@ -18,7 +18,7 @@ Roam Research 插件（Roam Depot 扩展格式）。在 block 编辑框里边打
   ```
 
 - 行为只能在 Roam 里手动验证：Settings → Roam Depot → Developer Extensions → 这个扩展的 Reload。
-- 所以改完要列出需要我手测的场景。常用回归清单：英文输入；中文拼音（组词中不弹，上屏后才弹）；在 `[[ ]]`、`(( ))`、`#tag`、代码块里不触发；Enter / Tab / Esc / ↑↓；候选多到列表要滚动时 ↑↓ 到底弹层不关；浅色和深色主题；窄窗口（< 640px 只显示列表）。
+- 所以改完要列出需要我手测的场景。常用回归清单：英文输入；中文拼音（组词中不弹，上屏后才弹）；在 `[[ ]]`、`(( ))`、`#tag`、代码块里不触发；Enter / Tab / Esc / ↑↓；候选多到列表要滚动时 ↑↓ 到底弹层不关；Roam 原版浅色 / 深色；装了 Roam Studio 时换几个主题和 Light / Dark / Auto；窄窗口（< 640px 只显示列表）。
 
 ## 代码地图
 
@@ -31,7 +31,8 @@ Roam Research 插件（Roam Depot 扩展格式）。在 block 编辑框里边打
 - **预览**：用 `pull` 拉子树，渲染成带竖线的嵌套大纲（`outlineHtml`），结果缓存到 `close()` 为止。
 - **写回 textarea**：`commit()` 把光标前的 `item.q` 替换成 `buildInsert(item)` 的结果。
 - **事件**：document / window 上的捕获阶段监听。`evaluate()` 是「要不要弹」的总入口。
-- **样式**：一段 CSS 字符串注入 `<style>`。颜色全是 `#rr-inline-ac` 上的 `--ac-*` 变量，深色主题只覆盖这些变量。Roam Studio 适配是打开弹层时用 JS 读它注入到 `:root` 的 `--bc-*/--co-*` 变量算成 `--ac-*` 写在弹层元素上；变量为空时换候选，读不到就回自带样式。
+- **样式**：一段 CSS 字符串注入 `<style>`。颜色全是 `#rr-inline-ac` 上的 `--ac-*` 变量，浅色 / 深色两套兜底值在 `LIGHT_VARS` / `DARK_VARS`。
+- **主题适配**：`applyTheme()` 每次打开弹层时跑，把当前主题折算成 `--ac-*` 内联写在弹层上。取色来源从高到低：Roam Studio 注入到 `:root` 的 `--bc-*/--co-*/--sd-*/--bd-*` 变量（`readStudioVars`）→ 页面上真实 Roam 元素的 computed style，页面上没有的元素照 `PROBE_HTML` 搭一份离屏的量，量完立刻删（`sampleRoamDom`）→ CSS 兜底。深浅色由 `isDarkUI()` 判定后加 `.rr-ac-light` / `.rr-ac-dark`，不指望 `.bp3-dark` 一定是弹层的祖先。结果按 `themeKey()`（html/body 的 class + Studio 样式长度 + 系统深浅）缓存，命令面板的 Refresh theme colors 清缓存。
 - **生命周期**：`onload` 注册设置面板、命令面板和监听；`onunload` 全部撤销。
 
 ## 必须遵守的约束
@@ -44,6 +45,8 @@ Roam Research 插件（Roam Depot 扩展格式）。在 block 编辑框里边打
 - **弹层内部的滚动不能关弹层**：scroll 监听挂在 window 的捕获阶段，会收到所有元素的滚动；`onScroll` 必须跳过来自弹层内部的事件，否则列表一滚动（包括 ↑↓ 触发的 `scrollIntoView`）弹层就没了。
 - **HTML 先转义**：图谱内容是不可信输入，拼进 `innerHTML` 的文本都要先过 `escHtml`。`formatInline` 是先整体转义、再往上加标签，新增格式化规则时保持这个顺序。
 - **Datalog 查询**：用户输入作为 `:in` 参数传，不要拼进查询字符串；放进正则前先 `escapeRegex`。block 过滤留在 datascript 里做，不要把全图谱的 block 拉到 JS 里再筛，大图谱会卡。
+- **主题色都要过对比度**：`deriveTheme()` 里正文、次要文字、强调色、高亮文字在各自底色上都要 ≥ 4.5:1。主题给的颜色差一点点时用 `fitContrast()` 保住色相微调明度，不要直接丢掉换成正文色（Roam 自带深色的链接蓝就只有 4.4:1）；底色和正文本身就读不了才整体返回 `null` 回到 CSS 兜底。
+- **探针不能留在页面上**：`sampleRoamDom()` 插的离屏节点必须在 `finally` 里删掉，它只是用来量颜色的，别让 Roam 的 React 树看到多余节点。
 - **命名前缀**：DOM id / class 用 `rr-inline-ac`、`rr-ac-`、`rr-pv-` 前缀，CSS 选择器都挂在 `#rr-inline-ac` 下面，避免影响 Roam 自己的样式。
 - **依赖 Roam DOM 约定的地方比较脆**：block 输入框靠 `textarea.rm-block-input` 识别；当前 block uid 取 textarea id 的最后 9 个字符；原生补全是否打开看 `.rm-autocomplete__results`；深色主题看 `.bp3-dark` 等祖先 class。Roam 改版后出问题先查这几处。
 

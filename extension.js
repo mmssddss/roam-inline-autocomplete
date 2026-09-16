@@ -496,7 +496,7 @@ function openWith(textarea, tail, items) {
   state.items = items;
   state.index = 0;
   ensurePopup();
-  applyRoamStudioTheme();
+  applyTheme();
   render();
   place();
 }
@@ -674,7 +674,7 @@ function on(target, type, fn, opts) {
 /* 样式                                                                */
 /* ------------------------------------------------------------------ */
 
-// 深色主题的变量覆盖（Roam 自带深色、以及 JS 读不到 Roam Studio 变量时的兜底）
+// 浅色 / 深色两套兜底变量：探测不出主题时用，探测出来了就被内联变量盖掉
 const DARK_VARS = `
   --ac-bg: #30404d;
   --ac-pane: #293742;
@@ -688,9 +688,7 @@ const DARK_VARS = `
   --ac-mark: #7a5b00;
   --ac-shadow: 0 0 0 1px rgba(16, 22, 26, 0.4), 0 2px 4px rgba(16, 22, 26, 0.4), 0 10px 30px -6px rgba(16, 22, 26, 0.7);`;
 
-// 颜色都是 #rr-inline-ac 上的 CSS 变量，深色主题只覆盖变量
-const CSS = `
-#${POPUP_ID} {
+const LIGHT_VARS = `
   --ac-bg: #ffffff;
   --ac-pane: #f5f8fa;
   --ac-text: #182026;
@@ -701,7 +699,12 @@ const CSS = `
   --ac-accent: #106ba3;
   --ac-active: rgba(19, 124, 189, 0.1);
   --ac-mark: #fef09f;
-  --ac-shadow: 0 0 0 1px rgba(16, 22, 26, 0.1), 0 2px 4px rgba(16, 22, 26, 0.1), 0 10px 30px -6px rgba(16, 22, 26, 0.25);
+  --ac-shadow: 0 0 0 1px rgba(16, 22, 26, 0.1), 0 2px 4px rgba(16, 22, 26, 0.1), 0 10px 30px -6px rgba(16, 22, 26, 0.25);`;
+
+// 颜色都是 #rr-inline-ac 上的 CSS 变量，换主题只覆盖变量
+const CSS = `
+#${POPUP_ID} {
+  ${LIGHT_VARS}
   --ac-radius: 8px;
 
   position: fixed;
@@ -844,9 +847,12 @@ const CSS = `
   #${POPUP_ID} { animation: none; }
 }
 
-/* 深色主题 */
+/* 深浅色：applyTheme() 判定出来后加 .rr-ac-light / .rr-ac-dark 为准（写在最后，
+   优先级同分靠后者胜）；它还没跑或判不出来时，退回看祖先上的主题 class */
 .bp3-dark #${POPUP_ID}, .dark-theme #${POPUP_ID}, [data-theme="dark"] #${POPUP_ID}, .rs-dark #${POPUP_ID} { ${DARK_VARS} }
 @media (prefers-color-scheme: dark) { .rs-auto #${POPUP_ID} { ${DARK_VARS} } }
+#${POPUP_ID}.rr-ac-light { ${LIGHT_VARS} }
+#${POPUP_ID}.rr-ac-dark { ${DARK_VARS} }
 `;
 
 function injectStyle() {
@@ -858,20 +864,32 @@ function injectStyle() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Roam Studio 主题适配                                                  */
+/* 主题适配                                                             */
 /* ------------------------------------------------------------------ */
 
-// Roam Studio 往 <head> 注入 <style id="roamstudio-css-theme">，里面是 :root 上的
-// --bc-*（背景）/ --co-*（文字）/ --sd-*（阴影）/ --bd-*（圆角）变量；<html> 上带
-// rs-light / rs-dark / rs-auto。它不把主题名写进 DOM，所以每次打开弹层时读变量现算。
+// 弹层颜色有三个来源，优先级从高到低：
+//   1. Roam Studio 注入的 --bc-*（背景）/ --co-*（文字）/ --sd-*（阴影）/
+//      --bd-*（圆角）变量，语义最准，读得到就用；
+//   2. 页面里真实 Roam 元素的 computed style，页面上没有的元素用离屏探针补
+//      （原版浅色 / 深色、以及用户自己写的 roam/css 主题都靠这条）；
+//   3. CSS 里硬编码的浅色 / 深色兜底。深浅由 JS 判定后加 .rr-ac-dark，
+//      不指望 .bp3-dark 一定是弹层的祖先。
+// 前两条合并成一组 --ac-* 内联写在弹层上。每次打开弹层时调 applyTheme()，
+// 主题 key（class + Studio 样式长度 + 系统深浅）没变就用缓存，不重复采样。
+
 const RS_STYLE_ID = "roamstudio-css-theme";
 const AC_VARS = [
   "--ac-bg", "--ac-pane", "--ac-text", "--ac-muted", "--ac-faint",
   "--ac-bullet", "--ac-line", "--ac-accent", "--ac-active",
   "--ac-mark", "--ac-mark-text", "--ac-shadow", "--ac-radius",
 ];
+const BLACK = [0, 0, 0, 1];
+const WHITE = [255, 255, 255, 1];
+// 两个颜色差到这个对比度以上才算肉眼分得开
+const SEPARATE = 1.03;
 
-// 颜色统一表示为 [r, g, b, a]，a 省略时当 1
+/* --- 颜色工具：统一表示为 [r, g, b, a]，a 省略时当 1 --- */
+
 function parseColor(str) {
   const s = (str || "").trim();
   let m = /^#([0-9a-f]{3,8})$/i.exec(s);
@@ -884,7 +902,7 @@ function parseColor(str) {
   }
   m = /^rgba?\(\s*([^)]*?)\s*\)$/i.exec(s);
   if (m) {
-    const parts = m[1].split(/[\s,]+/).filter(Boolean);
+    const parts = m[1].split(/[\s,\/]+/).filter(Boolean);
     if (parts.length !== 3 && parts.length !== 4) return null;
     const n = parts.map(Number);
     if (n.some((x) => !Number.isFinite(x))) return null;
@@ -893,15 +911,18 @@ function parseColor(str) {
   return null;
 }
 
+// fg 叠在 bg 上，两边都可以是半透明的
+function blend(fg, bg) {
+  const a = fg[3] + bg[3] * (1 - fg[3]);
+  if (a === 0) return [0, 0, 0, 0];
+  const ch = (i) => (fg[i] * fg[3] + bg[i] * bg[3] * (1 - fg[3])) / a;
+  return [ch(0), ch(1), ch(2), a];
+}
+
 // fg 按自己的 alpha 叠在不透明的 bg 上，返回不透明色
 function over(fg, bg) {
-  const a = fg[3];
-  return [
-    Math.round(fg[0] * a + bg[0] * (1 - a)),
-    Math.round(fg[1] * a + bg[1] * (1 - a)),
-    Math.round(fg[2] * a + bg[2] * (1 - a)),
-    1,
-  ];
+  const c = blend(fg, bg);
+  return [Math.round(c[0]), Math.round(c[1]), Math.round(c[2]), 1];
 }
 
 // 逐通道线性插值，t = 1 时全取 a，返回不透明色
@@ -938,11 +959,133 @@ function alpha(c, a) {
   return [c[0], c[1], c[2], a];
 }
 
-// 每次打开弹层时调：Roam Studio 在就把它的变量折算成 --ac-* 写到弹层上，
-// 不在（或读出来不靠谱）就清掉这些覆盖，回到自带样式
-function applyRoamStudioTheme() {
-  for (const v of AC_VARS) popup.style.removeProperty(v);
-  if (!document.getElementById(RS_STYLE_ID)) return;
+// 保住色相，往黑或白推到在所有给定底色上都够 target 为止；推到头还不够返回 null。
+// 主题给的强调色、高亮色常常差一点点（Roam 自带深色的链接蓝在弹层底色上只有
+// 4.4:1），直接丢掉就不像原主题了，微调明度比换成正文色更贴。
+function fitContrast(c, bgs, target) {
+  const toward = luminance(bgs[0]) > 0.5 ? BLACK : WHITE;
+  for (let t = 0; t <= 1.0001; t += 0.05) {
+    const v = t === 0 ? c : mix(toward, c, t);
+    if (bgs.every((b) => contrast(v, b) >= target)) return v;
+  }
+  return null;
+}
+
+/* --- 从页面上量颜色 --- */
+
+// 元素自己某个属性的颜色，完全透明当没有
+function colorOf(el, prop) {
+  if (!el) return null;
+  const c = parseColor(getComputedStyle(el)[prop]);
+  return c && c[3] > 0 ? c : null;
+}
+
+// 元素实际看上去的背景：自己透明就往祖先找，半透明就一层层叠下去
+function bgOf(el) {
+  let acc = null;
+  for (let n = el; n; n = n.parentElement) {
+    const c = parseColor(getComputedStyle(n).backgroundColor);
+    if (!c || c[3] === 0) continue;
+    acc = acc ? blend(acc, c) : c;
+    if (acc[3] >= 0.99) return [Math.round(acc[0]), Math.round(acc[1]), Math.round(acc[2]), 1];
+  }
+  return null;
+}
+
+// 页面上不一定有页面引用、高亮这些元素，就照着 Roam 的结构搭一份离屏的，
+// 让 Roam / Roam Studio / 用户 CSS 的选择器照常命中，量完立刻删掉
+const PROBE_HTML = `
+<div class="roam-app"><div class="roam-main"><div class="roam-body-main">
+<div class="rm-article-wrapper"><div class="roam-article"><div class="rm-block-children">
+<div class="rm-block-main rm-block__self">
+<span class="rm-bullet"><span class="rm-bullet__inner" data-probe="bullet"></span></span>
+<div class="rm-block-text roam-block">
+<span class="rm-page-ref rm-page-ref--link" data-probe="accent">A</span>
+<span class="rm-highlight" data-probe="mark">A</span>
+</div></div></div></div></div></div></div></div>
+<div class="rm-autocomplete__results bp3-elevation-3 bp3-menu" data-probe="popover">A</div>
+<div class="bp3-popover"><div class="bp3-popover-content" data-probe="popover2">A</div></div>`;
+
+// 弹层背景 / 阴影 / 圆角都从同一个「弹层类」元素上抄
+function readPopover(el, out, ancestors) {
+  if (!el) return false;
+  const cs = getComputedStyle(el);
+  let bg = null;
+  if (ancestors) {
+    bg = bgOf(el);
+  } else {
+    const c = parseColor(cs.backgroundColor);
+    if (c && c[3] >= 0.99) bg = [c[0], c[1], c[2], 1];
+  }
+  if (!bg) return false;
+  out.popover = bg;
+  if (cs.boxShadow && cs.boxShadow !== "none") out.shadow = cs.boxShadow;
+  const r = parseFloat(cs.borderRadius);
+  if (Number.isFinite(r) && r >= 2 && r <= 24) out.radius = r + "px";
+  return true;
+}
+
+// 采一次当前主题：先用页面上真实的元素，缺的再插探针
+function sampleRoamDom() {
+  const out = {
+    text: null, pageBg: null, popover: null, accent: null,
+    bullet: null, mark: null, markText: null, shadow: "", radius: "",
+  };
+
+  const article =
+    document.querySelector(".roam-article") ||
+    document.querySelector(".roam-body-main") ||
+    document.querySelector(".roam-main") ||
+    document.body;
+  out.pageBg = bgOf(article);
+  out.text = colorOf(document.querySelector(".rm-block-text") || article, "color");
+
+  const realPop = document.querySelector(".rm-autocomplete__results, .bp3-popover-content");
+  if (realPop) readPopover(realPop, out, true);
+  out.accent = colorOf(document.querySelector(".rm-page-ref--link"), "color");
+  out.bullet = colorOf(document.querySelector(".rm-bullet__inner, .rm-bullet"), "backgroundColor");
+  const realMark = document.querySelector(".rm-highlight");
+  if (realMark) {
+    out.mark = colorOf(realMark, "backgroundColor");
+    out.markText = colorOf(realMark, "color");
+  }
+
+  if (out.text && out.popover && out.accent && out.bullet && out.mark) return out;
+
+  const probe = document.createElement("div");
+  probe.setAttribute("data-rr-ac-probe", "");
+  probe.style.cssText =
+    "position:fixed;left:-10000px;top:0;width:400px;height:200px;" +
+    "overflow:hidden;visibility:hidden;pointer-events:none;contain:layout paint size;";
+  probe.innerHTML = PROBE_HTML;
+  document.body.appendChild(probe);
+  try {
+    const at = (name) => probe.querySelector(`[data-probe="${name}"]`);
+    if (!out.popover) readPopover(at("popover"), out, false) || readPopover(at("popover2"), out, false);
+    if (!out.text) out.text = colorOf(probe.querySelector(".rm-block-text"), "color");
+    if (!out.accent) out.accent = colorOf(at("accent"), "color");
+    if (!out.bullet) out.bullet = colorOf(at("bullet"), "backgroundColor");
+    if (!out.mark) {
+      out.mark = colorOf(at("mark"), "backgroundColor");
+      out.markText = colorOf(at("mark"), "color");
+    }
+  } finally {
+    probe.remove();
+  }
+  return out;
+}
+
+/* --- Roam Studio 的变量 --- */
+
+// Roam Studio 往 <head> 注入 <style id="roamstudio-css-theme">，里面是 :root 上的
+// --bc-* / --co-* / --sd-* / --bd-* 变量；<html> 上带 rs-light / rs-dark / rs-auto。
+// 它不把主题名写进 DOM，所以只能读变量现算。
+function readStudioVars() {
+  const out = {
+    text: null, pageBg: null, popover: null, accent: null,
+    bullet: null, mark: null, markText: null, active: null, shadow: "", radius: "",
+  };
+  if (!document.getElementById(RS_STYLE_ID)) return out;
   const cs = getComputedStyle(document.documentElement);
   // 有些主题把变量声明成空值，所以逐个候选读，第一个能解析且不透明的胜出
   const color = (...names) => {
@@ -954,11 +1097,44 @@ function applyRoamStudioTheme() {
   };
   const raw = (n) => cs.getPropertyValue(n).trim();
 
-  const bg = color("--bc-popover", "--bc-commandpalette__menu", "--bc-app");
-  const text = color("--co-popover", "--co-app");
-  if (!bg || !text || contrast(text, bg) < 4.5) return;
+  out.popover = color("--bc-popover", "--bc-commandpalette__menu");
+  out.pageBg = color("--bc-app");
+  out.text = color("--co-popover", "--co-app");
+  out.accent = color("--co-main__page-link");
+  out.bullet = color("--bc-main__bullet-inner");
+  out.active = color("--bc-block-search__menu-item--hover", "--bc-commandpalette__menu-item--active");
+  out.mark = parseColor(raw("--bc-main__highlight")); // 高亮底色允许半透明
+  out.markText = color("--co-main__highlight");
+  out.shadow = raw("--sd-popover");
+  const r = parseFloat(raw("--bd-popover"));
+  if (Number.isFinite(r) && r >= 2 && r <= 24) out.radius = r + "px";
+  return out;
+}
 
-  const pane = color("--bc-app") || bg; // 预览区排得像一个 Roam 页面，用页面背景
+/* --- 合并、校验、写变量 --- */
+
+function isDarkUI(src) {
+  const base = src.popover || src.pageBg;
+  if (base) return luminance(base) < 0.25;
+  if (src.text) return luminance(src.text) > 0.5;
+  if (document.querySelector(".bp3-dark, .dark-theme, .rs-dark, [data-theme='dark']")) return true;
+  if (document.querySelector(".rs-auto")) return matchMedia("(prefers-color-scheme: dark)").matches;
+  return false;
+}
+
+// src 里的颜色 → 一组 --ac-*。底色和正文对比不够就返回 null，交给 CSS 兜底
+function deriveTheme(src) {
+  const bg = src.popover || src.pageBg;
+  const text = src.text;
+  if (!bg || !text || contrast(text, bg) < 4.5) return null;
+
+  // 预览栏要和列表分得开：主题给了不一样的页面底色就用它，否则自己压暗一点
+  let pane = src.pageBg && contrast(src.pageBg, bg) >= SEPARATE ? src.pageBg : null;
+  if (!pane) {
+    const darker = mix(BLACK, bg, 0.06);
+    pane = contrast(darker, bg) >= SEPARATE ? darker : mix(text, bg, 0.08);
+  }
+
   let muted = text;
   for (const t of [0.7, 0.8, 0.9, 1]) {
     const c = mix(text, bg, t);
@@ -969,48 +1145,89 @@ function applyRoamStudioTheme() {
   }
   const faint = mix(text, bg, 0.45);
   const line = alpha(text, 0.12);
-  const bullet = color("--bc-main__bullet-inner") || faint;
-  let active = color("--bc-block-search__menu-item--hover", "--bc-commandpalette__menu-item--active");
-  if (!active || contrast(text, active) < 4.5) active = alpha(text, 0.08);
-  const activeSolid = over(active, bg);
-  let accent = color("--co-main__page-link");
-  if (!accent || contrast(accent, bg) < 4.5 || contrast(accent, activeSolid) < 4.5) accent = text;
+  const bullet = src.bullet ? over(src.bullet, bg) : faint;
 
-  // 高亮色允许半透明；文字色要能和叠出来的底色拉开对比，不然退回主题文字色
-  const m = parseColor(raw("--bc-main__highlight"));
-  const mt = color("--co-main__highlight");
-  let mark;
-  if (m) {
-    const solid = over(m, bg);
-    if (mt && contrast(mt, solid) >= 4.5) {
-      mark = m;
-      popup.style.setProperty("--ac-mark-text", cssColor(mt));
-    } else if (contrast(text, solid) >= 4.5) {
-      mark = m;
-    } else {
-      mark = alpha(accent, 0.18);
+  let active = src.active;
+  if (!active || contrast(text, over(active, bg)) < 4.5) active = alpha(text, 0.08);
+  const activeSolid = over(active, bg);
+
+  // 命中高亮和预览里的链接都用强调色，选中行和普通行上都要读得清
+  let accent = src.accent && fitContrast(src.accent, [bg, activeSolid], 4.5);
+  if (!accent) accent = text;
+
+  // 高亮底色原样用（允许半透明），文字色跟着调到够对比；调不出来才换自己的底色
+  const vars = {};
+  let mark = alpha(accent, 0.18);
+  if (src.mark && src.mark[3] > 0) {
+    const solid = over(src.mark, bg);
+    const markText = fitContrast(src.markText || text, [solid], 4.5);
+    if (markText) {
+      mark = src.mark;
+      if (cssColor(markText) !== cssColor(text)) vars["--ac-mark-text"] = cssColor(markText);
     }
-  } else {
-    mark = alpha(accent, 0.18);
   }
 
-  // 阴影和圆角不是颜色，非空就原样抄过来
-  const shadow = raw("--sd-popover");
-  if (shadow) popup.style.setProperty("--ac-shadow", shadow);
-  const radius = raw("--bd-popover");
-  if (radius) popup.style.setProperty("--ac-radius", radius);
+  vars["--ac-bg"] = cssColor(bg);
+  vars["--ac-pane"] = cssColor(pane);
+  vars["--ac-text"] = cssColor(text);
+  vars["--ac-muted"] = cssColor(muted);
+  vars["--ac-faint"] = cssColor(faint);
+  vars["--ac-line"] = cssColor(line);
+  vars["--ac-bullet"] = cssColor(bullet);
+  vars["--ac-accent"] = cssColor(accent);
+  vars["--ac-active"] = cssColor(active);
+  vars["--ac-mark"] = cssColor(mark);
+  if (src.shadow) vars["--ac-shadow"] = src.shadow;
+  if (src.radius) vars["--ac-radius"] = src.radius;
+  return vars;
+}
 
-  const set = (k, v) => popup.style.setProperty(k, cssColor(v));
-  set("--ac-bg", bg);
-  set("--ac-pane", pane);
-  set("--ac-text", text);
-  set("--ac-muted", muted);
-  set("--ac-faint", faint);
-  set("--ac-line", line);
-  set("--ac-bullet", bullet);
-  set("--ac-accent", accent);
-  set("--ac-active", active);
-  set("--ac-mark", mark);
+let themeCache = null;
+
+// 主题一变这串就变：Roam 深浅色改 body class，Roam Studio 换主题换整段 CSS
+function themeKey() {
+  const rs = document.getElementById(RS_STYLE_ID);
+  return [
+    document.documentElement.className,
+    document.body.className,
+    rs ? rs.textContent.length : 0,
+    matchMedia("(prefers-color-scheme: dark)").matches ? "d" : "l",
+  ].join("|");
+}
+
+function invalidateTheme() {
+  themeCache = null;
+  if (state.open) applyTheme();
+}
+
+function resolveTheme() {
+  const key = themeKey();
+  if (themeCache && themeCache.key === key) return themeCache.value;
+  const dom = sampleRoamDom();
+  const rs = readStudioVars();
+  // Studio 的变量更准，它没给的用页面上量到的补
+  const src = {};
+  for (const k of Object.keys(dom)) src[k] = rs[k] || dom[k];
+  src.active = rs.active || null;
+  const value = { dark: isDarkUI(src), vars: deriveTheme(src) };
+  themeCache = { key, value };
+  return value;
+}
+
+// 每次打开弹层时调
+function applyTheme() {
+  if (!popup) return;
+  for (const v of AC_VARS) popup.style.removeProperty(v);
+  let theme;
+  try {
+    theme = resolveTheme();
+  } catch (_) {
+    return; // 量不出来就维持上一次的判定，颜色交给 CSS
+  }
+  popup.classList.toggle("rr-ac-dark", theme.dark);
+  popup.classList.toggle("rr-ac-light", !theme.dark);
+  if (!theme.vars) return;
+  for (const k of Object.keys(theme.vars)) popup.style.setProperty(k, theme.vars[k]);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1109,6 +1326,10 @@ function onload({ extensionAPI }) {
     label: "Inline Autocomplete: Refresh page titles",
     callback: invalidateTitles,
   });
+  extensionAPI.ui.commandPalette.addCommand({
+    label: "Inline Autocomplete: Refresh theme colors",
+    callback: invalidateTheme,
+  });
 
   injectStyle();
   ensurePopup();
@@ -1129,6 +1350,7 @@ function onunload() {
   clearTimeout(state.timer);
   if (popup) popup.remove();
   popup = null;
+  themeCache = null;
   listEl = null;
   previewEl = null;
   const s = document.getElementById(STYLE_ID);

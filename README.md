@@ -40,7 +40,15 @@ The preview is read-only. It lightly styles `[[links]]`, `#tags`, `((references)
 
 ## Appearance
 
-The popup follows Roam's light and dark mode automatically. If you use the [Roam Studio](https://github.com/rcvd/RoamStudio) plugin, it also matches whichever theme (Craft, Things, Quattro, and so on) and appearance (Light / Dark / Auto) is active — colors, shadows, and corner radius included. No setup needed.
+The popup takes its colors from whatever theme you are on, in light and dark alike. No setup needed.
+
+- **Roam's own light and dark mode.** Instead of guessing at Roam's palette, the popup measures it: the background, text, page-link color, highlight, bullet, shadow, and corner radius Roam is actually using.
+- **[Roam Studio](https://github.com/rcvd/RoamStudio).** Whichever theme (Craft, Things, Quattro, and so on) and appearance (Light / Dark / Auto) is active, read from Roam Studio's own variables.
+- **Custom `roam/css` themes.** Same measuring, so most of them come through too.
+
+Colors that would be hard to read are adjusted rather than dropped: a link color that falls just short of the 4.5:1 contrast ratio is lightened or darkened a little, keeping its hue. If a theme's colors can't be read at all, the popup falls back to its own light or dark palette.
+
+Themes are measured once and cached until Roam's theme changes. If you edit your own CSS while Roam is open, run **Inline Autocomplete: Refresh theme colors** from the command palette.
 
 ## Chinese, Japanese, and Korean
 
@@ -65,4 +73,4 @@ Find them under Settings → Inline Autocomplete.
 | Max block suggestions | 5 | How many blocks to show |
 | Block reference format | `((uid))` | Insert `((uid))` or `[text](((uid)))` |
 
-The command palette has **Inline Autocomplete: Toggle** to turn suggestions on or off, and **Inline Autocomplete: Refresh page titles** to pick up pages created in the last 30 seconds.
+The command palette has **Inline Autocomplete: Toggle** to turn suggestions on or off, **Inline Autocomplete: Refresh page titles** to pick up pages created in the last 30 seconds, and **Inline Autocomplete: Refresh theme colors** to re-read the theme after you change your CSS.
