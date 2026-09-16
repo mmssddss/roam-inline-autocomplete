@@ -28,13 +28,13 @@ const DEFAULTS = {
   enabled: true,
   minChars: 2,
   maxLookback: 24,
-  maxResults: 8,
+  maxResults: 25,
   debounceMs: 90,
   excludeDates: true,
   insertMode: "[[page]]",
   blockSearch: true,
   blockMinChars: 3,
-  blockMaxResults: 5,
+  blockMaxResults: 10,
   blockInsertMode: "((uid))",
 };
 
@@ -198,8 +198,10 @@ function queryBlocks(q, excludeUid, limit) {
     .slice(0, limit);
 }
 
-// 页面在前，block 在后。block 先用「页面命中的那段」搜（中文不分词，这段通常比整
-// 个词更像一个词），太短或搜不到时再用整个词兜一次
+// 页面在前，block 在后。block 先用光标前的整个词搜，这是最精确的意图；搜不到（或
+// 短于 blockMinChars）再退到「页面命中的那段」，中文不分词时那段通常更像一个词。
+// 反过来会出事：打「动态的效果」时页面只命中了后缀「效果」，block 就跟着只搜
+// 「效果」，把真正想要的那条漏掉。
 function findMatches(tail, currentUid) {
   const pages = findPageMatches(tail);
   let blocks = [];
@@ -207,7 +209,7 @@ function findMatches(tail, currentUid) {
     const min = setting("blockMinChars");
     const limit = setting("blockMaxResults");
     const tried = new Set();
-    for (const q of [pages.length ? pages[0].q : null, tail]) {
+    for (const q of [tail, pages.length ? pages[0].q : null]) {
       if (!q || q.length < min || tried.has(q)) continue;
       tried.add(q);
       blocks = queryBlocks(q, currentUid, limit);
@@ -296,10 +298,8 @@ function ensurePopup() {
   });
   popup.addEventListener("mouseover", (e) => {
     const li = e.target.closest("[data-idx]");
-    if (li && Number(li.dataset.idx) !== state.index) {
-      state.index = Number(li.dataset.idx);
-      render({ scroll: false }); // 悬停不滚动列表，免得列表在鼠标底下跳
-    }
+    // 悬停不滚动列表，免得列表在鼠标底下跳
+    if (li) setActive(Number(li.dataset.idx), { scroll: false });
   });
   document.body.appendChild(popup);
   return popup;
@@ -356,12 +356,30 @@ function renderItem(item, i, prev) {
   </div>`;
 }
 
-function render({ scroll = true } = {}) {
+// 候选变了才重建 DOM
+function render() {
   ensurePopup();
   listEl.innerHTML = state.items.map((item, i) => renderItem(item, i, state.items[i - 1])).join("");
-  const active = listEl.querySelector(".is-active");
-  if (scroll && active) active.scrollIntoView({ block: "nearest" });
   renderPreview(state.items[state.index]);
+}
+
+// 只换高亮那一行。候选可以有几十条，↑↓ 每按一次都重建整个列表会肉眼可见地卡
+function setActive(index, { scroll = true } = {}) {
+  if (!state.items[index] || index === state.index) return;
+  const rows = listEl.children;
+  const prev = rows[state.index];
+  if (prev) {
+    prev.classList.remove("is-active");
+    prev.setAttribute("aria-selected", "false");
+  }
+  state.index = index;
+  const next = rows[index];
+  if (next) {
+    next.classList.add("is-active");
+    next.setAttribute("aria-selected", "true");
+    if (scroll) next.scrollIntoView({ block: "nearest" });
+  }
+  renderPreview(state.items[index]);
 }
 
 /* ------------------------------------------------------------------ */
@@ -644,12 +662,10 @@ function onKeyDown(e) {
   if (state.composing) return;
   switch (e.key) {
     case "ArrowDown":
-      state.index = (state.index + 1) % state.items.length;
-      render();
+      setActive((state.index + 1) % state.items.length);
       break;
     case "ArrowUp":
-      state.index = (state.index - 1 + state.items.length) % state.items.length;
-      render();
+      setActive((state.index - 1 + state.items.length) % state.items.length);
       break;
     case "Enter":
     case "Tab":
@@ -1284,8 +1300,8 @@ function onload({ extensionAPI }) {
       {
         id: "maxResults",
         name: "Max page suggestions",
-        description: "Default: 8.",
-        action: { type: "input", placeholder: "8" },
+        description: "Default: 25. The list scrolls; ↑ / ↓ walk the whole thing.",
+        action: { type: "input", placeholder: "25" },
       },
       {
         id: "debounceMs",
@@ -1320,8 +1336,8 @@ function onload({ extensionAPI }) {
       {
         id: "blockMaxResults",
         name: "Max block suggestions",
-        description: "Default: 5.",
-        action: { type: "input", placeholder: "5" },
+        description: "Default: 10.",
+        action: { type: "input", placeholder: "10" },
       },
       {
         id: "blockInsertMode",

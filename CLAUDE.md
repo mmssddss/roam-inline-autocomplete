@@ -25,8 +25,9 @@ Roam Research 插件（Roam Depot 扩展格式）。在 block 编辑框里边打
 `extension.js` 用注释横幅分段，从上到下：
 
 - **设置**：`setting(id)` 读 `extensionAPI.settings`，空值回退到 `DEFAULTS`。输入框类设置存的是字符串，在这里转成数字，非正数也回退默认值。
-- **标题缓存与匹配**：全图谱页面标题缓存 30 秒（新建的页面最多晚 30 秒才出现；命令面板有 Refresh page titles）。`tailBeforeCursor` 取光标前到最近分隔符（`DELIM_RE`）为止的文字；`findPageMatches` 从最长后缀往短试，命中就停，中文不分词也能匹配就靠这个。`queryBlocks` 在 datascript 里用正则搜 block（`(?i)` 前缀走 ClojureScript 的 `re-pattern`，万一哪天不认了会自动降级成大小写敏感）。`findMatches` 里 block 先用页面命中的那段搜，太短或搜不到再用整个词兜一次。
+- **标题缓存与匹配**：全图谱页面标题缓存 30 秒（新建的页面最多晚 30 秒才出现；命令面板有 Refresh page titles）。`tailBeforeCursor` 取光标前到最近分隔符（`DELIM_RE`）为止的文字；`findPageMatches` 从最长后缀往短试，命中就停，中文不分词也能匹配就靠这个。`queryBlocks` 在 datascript 里用正则搜 block（`(?i)` 前缀走 ClojureScript 的 `re-pattern`，万一哪天不认了会自动降级成大小写敏感）。`findMatches` 里 block **先用光标前的整个词搜**，搜不到（或短于 `blockMinChars`）才退到页面命中的那段 —— 反过来的话，打「动态的效果」时页面只命中后缀「效果」，block 就跟着只搜「效果」。
 - **光标坐标**：mirror div 法算 textarea 里光标的屏幕坐标，用来定位弹层。
+- **列表渲染**：`render()` 只在候选变了时重建 DOM，`setActive()` 换高亮行时不重建（候选默认 25 + 10 条，↑↓ 每按一次都重建会卡）。加新的列表交互时别退回去整个 `innerHTML` 重刷。
 - **弹层**：上面左右两栏（候选列表 / 预览），底部一行按键提示。页面候选只显示标题（`pageLabel`，tag 模式加个 `#`），整行走 `--ac-accent`；block 候选是圆点 + 原文 + 所在页面，走 `--ac-text`。**颜色只用来区分页面和 block**，命中片段一律加粗 + `--ac-line` 底色，别再给它上强调色。
 - **预览**：用 `pull` 拉子树，渲染成带竖线的嵌套大纲（`outlineHtml`），结果缓存到 `close()` 为止。
 - **写回 textarea**：`commit()` 把光标前的 `item.q` 替换成 `buildInsert(item)` 的结果。

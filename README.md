@@ -29,7 +29,7 @@ Color tells you what a suggestion is:
 
 The part that matched is bold with a light background in both, so the color stays free to mean page or block.
 
-Pages come first, then blocks, with a divider in between. Block search is on by default, starts at 3 characters, and shows up to 5 blocks. You can change these or turn it off in the settings. Blocks are searched by the piece of text that matched a page title, and if that turns up nothing, by the whole word you typed.
+Pages come first, then blocks, with a divider in between. Block search is on by default, starts at 3 characters, and shows up to 10 blocks. You can change these or turn it off in the settings. Blocks are searched by the whole word in front of the cursor; only if that finds nothing does it fall back to the shorter piece that matched a page title.
 
 ## Preview
 
@@ -66,13 +66,13 @@ Find them under Settings → Inline Autocomplete.
 | Enable | On | Turns suggestions on or off |
 | Minimum characters | 2 | Characters needed before the cursor to start matching |
 | Lookback length | 24 | How far back to look for a match in languages without spaces |
-| Max page suggestions | 8 | How many pages to show |
+| Max page suggestions | 25 | How many pages to show (the list scrolls) |
 | Delay (ms) | 90 | How long to wait after you stop typing |
 | Skip daily notes pages | On | Leaves date pages out of the suggestions |
 | Page link format | `[[page]]` | Insert `[[page]]` or `#tag` |
 | Suggest blocks | On | Also suggest matching blocks |
 | Minimum characters for blocks | 3 | Characters needed before blocks are searched |
-| Max block suggestions | 5 | How many blocks to show |
+| Max block suggestions | 10 | How many blocks to show |
 | Block reference format | `((uid))` | Insert `((uid))` or `[text](((uid)))` |
 
 The command palette has **Inline Autocomplete: Toggle** to turn suggestions on or off, **Inline Autocomplete: Refresh page titles** to pick up pages created in the last 30 seconds, and **Inline Autocomplete: Refresh theme colors** to re-read the theme after you change your CSS.
