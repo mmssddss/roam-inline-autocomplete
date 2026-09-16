@@ -157,28 +157,39 @@ function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+const BLOCK_QUERY = `[:find ?uid ?s ?pt
+   :in $ ?pat
+   :where
+     [(re-pattern ?pat) ?re]
+     [?b :block/string ?s]
+     [(re-find ?re ?s)]
+     [?b :block/uid ?uid]
+     [?b :block/page ?p]
+     [?p :node/title ?pt]]`;
+
+// re-pattern 认 (?i) 前缀（ClojureScript 会把它转成 RegExp 的 flag），万一哪天不认了
+// 就降级成大小写敏感的搜，总比一条 block 都搜不出来强
+let blockQueryCaseFlag = true;
+
+function runBlockQuery(pat) {
+  try {
+    return window.roamAlphaAPI.q(BLOCK_QUERY, pat) || [];
+  } catch (err) {
+    console.warn("[inline-ac] block query failed", pat, err);
+    return null;
+  }
+}
+
 // block：让 datascript 用正则做不区分大小写的子串匹配，避免把全图谱拉到 JS 里
 function queryBlocks(q, excludeUid, limit) {
-  const pat = "(?i)" + escapeRegex(q);
-  let rows = [];
-  try {
-    rows =
-      window.roamAlphaAPI.q(
-        `[:find ?uid ?s ?pt
-          :in $ ?pat
-          :where
-            [(re-pattern ?pat) ?re]
-            [?b :block/string ?s]
-            [(re-find ?re ?s)]
-            [?b :block/uid ?uid]
-            [?b :block/page ?p]
-            [?p :node/title ?pt]]`,
-        pat
-      ) || [];
-  } catch (err) {
-    console.warn("[inline-ac] block query failed", err);
-    return [];
+  const esc = escapeRegex(q);
+  let rows = null;
+  if (blockQueryCaseFlag) {
+    rows = runBlockQuery("(?i)" + esc);
+    if (rows === null) blockQueryCaseFlag = false;
   }
+  if (rows === null) rows = runBlockQuery(esc);
+  if (rows === null) return [];
   const ql = q.toLowerCase();
   return rows
     .filter(([uid, s]) => uid !== excludeUid && s.trim() !== "" && s.toLowerCase() !== ql)
@@ -187,14 +198,20 @@ function queryBlocks(q, excludeUid, limit) {
     .slice(0, limit);
 }
 
-// 页面在前，block 在后。block 用「页面命中的那段」或整个词去搜
+// 页面在前，block 在后。block 先用「页面命中的那段」搜（中文不分词，这段通常比整
+// 个词更像一个词），太短或搜不到时再用整个词兜一次
 function findMatches(tail, currentUid) {
   const pages = findPageMatches(tail);
   let blocks = [];
   if (setting("blockSearch")) {
-    const q = pages.length ? pages[0].q : tail;
-    if (q.length >= setting("blockMinChars")) {
-      blocks = queryBlocks(q, currentUid, setting("blockMaxResults"));
+    const min = setting("blockMinChars");
+    const limit = setting("blockMaxResults");
+    const tried = new Set();
+    for (const q of [pages.length ? pages[0].q : null, tail]) {
+      if (!q || q.length < min || tried.has(q)) continue;
+      tried.add(q);
+      blocks = queryBlocks(q, currentUid, limit);
+      if (blocks.length) break;
     }
   }
   return pages.concat(blocks);
@@ -314,12 +331,11 @@ function snippet(text, query, max = 70) {
   return (start > 0 ? "…" : "") + piece + (start + max < t.length ? "…" : "");
 }
 
-// 页面候选按插入后的样子显示：[[标题]]，或 #标题 / #[[标题]]
+// 页面候选只显示标题，用页面链接色和 block 行区分；tag 模式留一个 # 提示插入格式
 function pageLabel(item) {
-  const br = (s) => `<span class="rr-ac-br">${s}</span>`;
   const title = `<span class="rr-ac-title">${highlight(item.title, item.q)}</span>`;
-  if (setting("insertMode") !== "#tag") return br("[[") + title + br("]]");
-  return tagNeedsBrackets(item.title) ? br("#[[") + title + br("]]") : br("#") + title;
+  if (setting("insertMode") !== "#tag") return title;
+  return `<span class="rr-ac-sigil">#</span>` + title;
 }
 
 function renderItem(item, i, prev) {
@@ -743,7 +759,14 @@ const CSS = `
   white-space: nowrap;
 }
 #${POPUP_ID} .rr-ac-item.is-active { background: var(--ac-active); }
-#${POPUP_ID} .rr-ac-item b { font-weight: 600; color: var(--ac-accent); }
+/* 命中的那段一律加粗 + 中性底色，不借颜色 —— 颜色只用来分页面和 block */
+#${POPUP_ID} .rr-ac-item b {
+  padding: 0 2px;
+  margin: 0 -1px;
+  border-radius: 3px;
+  background: var(--ac-line);
+  font-weight: 700;
+}
 #${POPUP_ID} .rr-ac-item.rr-ac-group-start { margin-top: 9px; }
 #${POPUP_ID} .rr-ac-group-start::before {
   content: "";
@@ -754,13 +777,13 @@ const CSS = `
   border-top: 1px solid var(--ac-line);
 }
 
-/* 页面行：[[标题]]，括号淡色，标题太长时括号保留、标题省略 */
-#${POPUP_ID} .rr-ac-page { display: flex; align-items: baseline; }
-#${POPUP_ID} .rr-ac-br { flex: none; color: var(--ac-faint); }
+/* 页面行：整行用页面链接色 —— 这个颜色只给页面候选，一眼和下面的 block 行分开 */
+#${POPUP_ID} .rr-ac-page { display: flex; align-items: baseline; color: var(--ac-accent); }
+#${POPUP_ID} .rr-ac-sigil { flex: none; opacity: 0.6; }
 #${POPUP_ID} .rr-ac-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
-/* block 行：圆点 + 两行（原文 / 所在页面） */
-#${POPUP_ID} .rr-ac-block { display: flex; align-items: flex-start; gap: 9px; }
+/* block 行：圆点 + 两行（原文 / 所在页面），原文一律正文色 */
+#${POPUP_ID} .rr-ac-block { display: flex; align-items: flex-start; gap: 9px; color: var(--ac-text); }
 #${POPUP_ID} .rr-ac-dot {
   flex: none;
   width: 5px;

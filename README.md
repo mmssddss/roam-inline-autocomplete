@@ -22,12 +22,14 @@ To stay out of the way of Roam's own autocomplete, nothing pops up inside `[[ ]]
 
 ## Suggestions
 
-Each suggestion is shown the way Roam writes it:
+Color tells you what a suggestion is:
 
-- **Pages** look like the link you'll get: `[[Title]]`, or `#Title` if you insert tags.
-- **Blocks** have a bullet, with the page they're on underneath. Picking one inserts a block reference; it **never** creates a new page.
+- **Pages** are the plain title in your theme's page-link color — no `[[ ]]` around it (a `#` goes in front if you insert tags).
+- **Blocks** are in the normal text color, with a bullet and the page they're on underneath. Picking one inserts a block reference; it **never** creates a new page.
 
-Pages come first, then blocks, with a divider in between. Block search is on by default, starts at 3 characters, and shows up to 5 blocks. You can change these or turn it off in the settings.
+The part that matched is bold with a light background in both, so the color stays free to mean page or block.
+
+Pages come first, then blocks, with a divider in between. Block search is on by default, starts at 3 characters, and shows up to 5 blocks. You can change these or turn it off in the settings. Blocks are searched by the piece of text that matched a page title, and if that turns up nothing, by the whole word you typed.
 
 ## Preview
 
