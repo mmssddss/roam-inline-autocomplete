@@ -79,3 +79,7 @@ Find them under Settings → Inline Autocomplete.
 | Block reference format | `((uid))` | Insert `((uid))` or `[text](((uid)))` |
 
 The command palette has **Inline Autocomplete: Toggle** to turn suggestions on or off, **Inline Autocomplete: Refresh page titles** to pick up pages created in the last 30 seconds, and **Inline Autocomplete: Refresh theme colors** to re-read the theme after you change your CSS.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
