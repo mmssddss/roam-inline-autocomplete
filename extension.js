@@ -136,7 +136,9 @@ function findPageMatches(tail) {
     const starts = [];
     const contains = [];
     for (const t of titles) {
-      if (t.lower === q) continue; // 已经完整敲出标题，没必要提示
+      // 标题和这段完全一样也要留着：打完「机器学习」正想把它变成链接，这才是
+      // 「不用先输 [[」的意义。跳过它的话这一轮会空，循环退到更短的后缀，同一个
+      // 页面又被 includes 捞回来，q 却短了一截 —— 插入时就变成「机[[机器学习]]」
       if (t.lower.startsWith(q)) starts.push(t.title);
       else if (t.lower.includes(q)) contains.push(t.title);
     }

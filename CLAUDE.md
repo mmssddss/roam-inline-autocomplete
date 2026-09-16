@@ -50,6 +50,7 @@ Roam Research 插件（Roam Depot 扩展格式）。在 block 编辑框里边打
 - **主题色都要过对比度**：`deriveTheme()` 里正文、次要文字、强调色、高亮文字在各自底色上都要 ≥ 4.5:1。主题给的颜色差一点点时用 `fitContrast()` 保住色相微调明度，不要直接丢掉换成正文色（Roam 自带深色的链接蓝就只有 4.4:1）；底色和正文本身就读不了才整体返回 `null` 回到 CSS 兜底。
 - **探针不能留在页面上**：`sampleRoamDom()` 插的离屏节点必须在 `finally` 里删掉，它只是用来量颜色的，别让 Roam 的 React 树看到多余节点。
 - **弹层必须赶在下一次按键之前出现**：`debounceMs` 默认 0，弹层也没有淡入动画。Enter 默认插入第一个候选，所以晚一拍冒出来的弹层会把用户正要按的换行键抢走 —— 这是刻意取舍，别为了「顺滑」把默认延迟或入场动画加回来。
+- **`item.q` 必须是真正匹配上的那一段**：`commit()` 靠 `cursor - item.q.length` 回退光标，q 短一个字，插入就变成「机[[机器学习]]」。改 `findPageMatches` 的命中条件时特别小心：某一轮被过滤成空，循环会退到更短的后缀，同一个页面可能被 `includes` 捞回来，但 q 已经错位了。
 - **命名前缀**：DOM id / class 用 `rr-inline-ac`、`rr-ac-`、`rr-pv-` 前缀，CSS 选择器都挂在 `#rr-inline-ac` 下面，避免影响 Roam 自己的样式。
 - **依赖 Roam DOM 约定的地方比较脆**：block 输入框靠 `textarea.rm-block-input` 识别；当前 block uid 取 textarea id 的最后 9 个字符；原生补全是否打开看 `.rm-autocomplete__results`；深色主题看 `.bp3-dark` 等祖先 class。Roam 改版后出问题先查这几处。
 
