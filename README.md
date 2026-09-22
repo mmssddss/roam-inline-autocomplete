@@ -2,6 +2,8 @@
 
 Page and block suggestions pop up as you type, without typing `[[` first. Works with Chinese, Japanese, and Korean input methods.
 
+Made by [Maverick Li](https://maverickli.org).
+
 ![Typing pinyin in Roam: nothing interrupts while the IME is composing, then page and block suggestions appear and insert a page link and a block reference](resource/auto-completion.gif)
 
 ## Install
@@ -83,6 +85,8 @@ Find them under Settings → Inline Autocomplete.
 | Block reference format | `((uid))` | Insert `((uid))` or `[text](((uid)))` |
 
 The command palette has **Inline Autocomplete: Toggle** to turn suggestions on or off, **Inline Autocomplete: Refresh page titles** to pick up pages created in the last 30 seconds, and **Inline Autocomplete: Refresh theme colors** to re-read the theme after you change your CSS.
+
+The **Author** row at the bottom of the settings opens [Maverick Li's blog](https://maverickli.org).
 
 ## License
 

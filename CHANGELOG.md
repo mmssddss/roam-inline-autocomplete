@@ -4,6 +4,12 @@ All notable changes to this extension are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-09-22
+
+### Added
+
+- Author credit linking to Maverick Li's blog in the README and extension settings.
+
 ## [1.0.0] - 2026-09-16
 
 Initial release.

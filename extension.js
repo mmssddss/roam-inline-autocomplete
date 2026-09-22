@@ -1343,6 +1343,16 @@ function onload({ extensionAPI }) {
         description: "((uid)) inserts a plain block reference. [text](((uid))) uses the block's text as the link label.",
         action: { type: "select", items: ["((uid))", "[text](((uid)))"] },
       },
+      {
+        id: "author",
+        name: "Author",
+        description: "Thoughts, projects, and writing at maverickli.org.",
+        action: {
+          type: "button",
+          content: "Maverick Li ↗",
+          onClick: () => window.open("https://maverickli.org", "_blank", "noopener,noreferrer"),
+        },
+      },
     ],
   });
 
