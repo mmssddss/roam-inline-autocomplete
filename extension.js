@@ -7,6 +7,7 @@
  * 弹框左右分栏：左边是候选列表，右边实时预览选中项（页面内容 / block 及其子块），底部是按键提示。
  * - Enter / Tab：把光标前的匹配文字替换成对应引用
  * - Esc：关闭候选（同一个词不再重复弹出，直到你换词）
+ * - ← / → / Home / End：照常挪光标，候选按新位置重新匹配
  * - ↑ / ↓：选择候选
  * - 中文/日文/韩文：IME 组词期间不弹出，只在 compositionend 之后匹配；
  *   没有空格分词的语言用「光标前若干字符的最长后缀」去匹配标题。
@@ -16,6 +17,8 @@
 const POPUP_ID = "rr-inline-ac";
 const STYLE_ID = "rr-inline-ac-style";
 const TITLE_CACHE_TTL = 30 * 1000; // 页面标题缓存 30 秒
+const BLOCK_CACHE_TTL = 30 * 1000; // block 扫描结果也是 30 秒
+const LATE_OPEN_GRACE_MS = 200; // 晚到的弹层打开后这段时间内 Enter / Tab 放行给 Roam
 
 const DATE_PAGE_RE =
   /^(January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}(st|nd|rd|th), \d{4}$/;
@@ -34,6 +37,8 @@ const DEFAULTS = {
   insertMode: "[[page]]",
   blockSearch: true,
   blockMinChars: 3,
+  blockMinCharsLatin: 4,
+  blockDelayMs: 250,
   blockMaxResults: 10,
   blockInsertMode: "((uid))",
 };
@@ -48,6 +53,9 @@ let state = {
   dismissedTail: null, // Esc 之后记住当前词，避免继续弹
   composing: false,
   timer: null,
+  blockTimer: null, // block 搜索自己的定时器
+  seq: 0, // 每次 evaluate() 加一，晚到的 block 结果靠它认出自己过时了
+  lateOpenAt: 0, // 弹层是被晚到的 block 结果打开的时刻；立刻打开的是 0
   ignoreNextInput: false,
 };
 let titleCache = { list: [], ts: 0 };
@@ -58,12 +66,16 @@ let listeners = [];
 /* 设置                                                                */
 /* ------------------------------------------------------------------ */
 
+// 延迟类设置填 0 是有意义的（不等），其他数字设置 0 没意义，回退默认值
+const ZERO_OK = new Set(["debounceMs", "blockDelayMs"]);
+
 function setting(id) {
   const v = api && api.settings.get(id);
   if (v === undefined || v === null || v === "") return DEFAULTS[id];
   if (typeof DEFAULTS[id] === "number") {
     const n = Number(v);
-    return Number.isFinite(n) && n > 0 ? n : DEFAULTS[id];
+    const ok = Number.isFinite(n) && (ZERO_OK.has(id) ? n >= 0 : n > 0);
+    return ok ? n : DEFAULTS[id];
   }
   return v;
 }
@@ -182,8 +194,46 @@ function runBlockQuery(pat) {
   }
 }
 
+// 中日韩文字：汉字、平假名、片假名、谚文
+const CJK_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+
+// 含中日韩字的用 blockMinChars；纯拉丁字母一个字信息量小，3 个字母能命中大半个图谱，
+// 默认要到 4 个才搜
+function blockMinFor(q) {
+  return setting(CJK_RE.test(q) ? "blockMinChars" : "blockMinCharsLatin");
+}
+
+// 和 datascript 里 (?i) 正则同一个语义：不区分大小写的子串。降级成大小写敏感后也跟着变。
+// r[3] 是扫描时就转好的小写原文，缓存命中时每个键都要筛上万行，别每次再 toLowerCase
+function filterRows(rows, q) {
+  if (!blockQueryCaseFlag) return rows.filter((r) => r[1].includes(q));
+  const ql = q.toLowerCase();
+  return rows.filter((r) => r[3].includes(ql));
+}
+
+// 上一次扫描的完整结果（没过滤、没截断，只留前 N 条会丢匹配）。词变长时（mach → machi）
+// 新词包含旧词，结果一定是旧结果的子集，直接在 JS 里筛，不再扫一遍全图谱。
+// 换 textarea、close()、新词不包含旧词、超过 30 秒都作废
+let blockCache = null; // { q, rows, ts, textarea, caseless }
+
+// 缓存能不能直接回答 q：同一个 textarea、没过期、q 包含上次扫描的词
+function blockCacheCovers(q, textarea) {
+  const c = blockCache;
+  return (
+    !!c &&
+    c.textarea === textarea &&
+    c.caseless === blockQueryCaseFlag &&
+    Date.now() - c.ts <= BLOCK_CACHE_TTL &&
+    (c.caseless ? q.toLowerCase().includes(c.q.toLowerCase()) : q.includes(c.q))
+  );
+}
+
 // block：让 datascript 用正则做不区分大小写的子串匹配，避免把全图谱拉到 JS 里
-function queryBlocks(q, excludeUid, limit) {
+function scanBlocks(q, textarea) {
+  if (blockCacheCovers(q, textarea)) {
+    const c = blockCache;
+    return q === c.q ? c.rows : filterRows(c.rows, q);
+  }
   const esc = escapeRegex(q);
   let rows = null;
   if (blockQueryCaseFlag) {
@@ -192,33 +242,59 @@ function queryBlocks(q, excludeUid, limit) {
   }
   if (rows === null) rows = runBlockQuery(esc);
   if (rows === null) return [];
-  const ql = q.toLowerCase();
-  return rows
-    .filter(([uid, s]) => uid !== excludeUid && s.trim() !== "" && s.toLowerCase() !== ql)
-    .map(([uid, s, pt]) => ({ type: "block", uid, text: s, page: pt, q }))
-    .sort((a, b) => a.text.length - b.text.length)
-    .slice(0, limit);
+  // 另存一份带小写原文的行，不往 Roam API 返回的数组上写字段（冻结的数组在严格模式下会抛错）
+  const own = rows.map(([uid, s, pt]) => [uid, s, pt, s.toLowerCase()]);
+  blockCache = { q, rows: own, ts: Date.now(), textarea, caseless: blockQueryCaseFlag };
+  return own;
 }
 
-// 页面在前，block 在后。block 先用光标前的整个词搜，这是最精确的意图；搜不到（或
-// 短于 blockMinChars）再退到「页面命中的那段」，中文不分词时那段通常更像一个词。
-// 反过来会出事：打「动态的效果」时页面只命中了后缀「效果」，block 就跟着只搜
-// 「效果」，把真正想要的那条漏掉。
-function findMatches(tail, currentUid) {
-  const pages = findPageMatches(tail);
-  let blocks = [];
-  if (setting("blockSearch")) {
-    const min = setting("blockMinChars");
-    const limit = setting("blockMaxResults");
-    const tried = new Set();
-    for (const q of [tail, pages.length ? pages[0].q : null]) {
-      if (!q || q.length < min || tried.has(q)) continue;
-      tried.add(q);
-      blocks = queryBlocks(q, currentUid, limit);
-      if (blocks.length) break;
-    }
+// 过滤、挑最短的几条都放在缓存筛完之后做，缓存里永远是完整的结果。
+// 结果可能上万行而只要 limit 条，不整体排序，边扫边维护一个按长度排好的小数组；
+// 等长的先到先得，和原来的稳定排序结果一样
+function toBlockItems(rows, q, excludeUid, limit) {
+  const ql = q.toLowerCase();
+  const top = [];
+  for (const r of rows) {
+    const [uid, s] = r;
+    const len = s.length;
+    if (top.length === limit && len >= top[limit - 1][1].length) continue;
+    if (uid === excludeUid || s.trim() === "" || r[3] === ql) continue;
+    let i = top.length;
+    while (i > 0 && top[i - 1][1].length > len) i--;
+    top.splice(i, 0, r);
+    if (top.length > limit) top.pop();
   }
-  return pages.concat(blocks);
+  return top.map(([uid, s, pt]) => ({ type: "block", uid, text: s, page: pt, q }));
+}
+
+// block 搜什么：光标前的整个词，和页面命中的那段，短于各自门槛的不要
+function blockCandidates(tail, pages) {
+  const out = [];
+  for (const q of [tail, pages.length ? pages[0].q : null]) {
+    if (q && q.length >= blockMinFor(q) && !out.includes(q)) out.push(q);
+  }
+  return out;
+}
+
+// block 先用光标前的整个词，这是最精确的意图；搜不到（或短于门槛）再退到「页面命中的那段」，
+// 中文不分词时那段通常更像一个词。反过来会出事：打「动态的效果」时页面只命中了后缀「效果」，
+// block 就跟着只搜「效果」，把真正想要的那条漏掉。
+// 页面命中的那段是整个词的后缀，它的结果是整个词结果的超集，所以只拿短的那个扫一次，
+// 整个词的结果在 JS 里从中筛出来 —— 一次求值最多扫一遍图谱。item.q 必须是 commit() 要替换的那段
+function shortestCandidate(cands) {
+  return cands.reduce((a, b) => (b.length < a.length ? b : a));
+}
+
+function findBlockMatches(tail, cands, textarea) {
+  const limit = setting("blockMaxResults");
+  const uid = currentBlockUid(textarea);
+  const shortest = shortestCandidate(cands);
+  const rows = scanBlocks(shortest, textarea);
+  if (shortest !== tail && cands.includes(tail)) {
+    const whole = toBlockItems(filterRows(rows, tail), tail, uid, limit);
+    if (whole.length) return whole;
+  }
+  return toBlockItems(rows, shortest, uid, limit);
 }
 
 function currentBlockUid(textarea) {
@@ -363,6 +439,18 @@ function render() {
   ensurePopup();
   listEl.innerHTML = state.items.map((item, i) => renderItem(item, i, state.items[i - 1])).join("");
   renderPreview(state.items[state.index]);
+}
+
+// block 结果晚到，接在已有候选后面：已有的行和当前选中项都不动，正按 ↓ 的人不会看到高亮跳走
+function appendItems(items) {
+  const start = state.items.length;
+  state.items = state.items.concat(items);
+  let html = "";
+  for (let i = start; i < state.items.length; i++) {
+    html += renderItem(state.items[i], i, state.items[i - 1]);
+  }
+  listEl.insertAdjacentHTML("beforeend", html);
+  place(); // 列表变长了，窄窗口下重新定位，免得弹层顶出屏幕底
 }
 
 // 只换高亮那一行。候选可以有几十条，↑↓ 每按一次都重建整个列表会肉眼可见地卡
@@ -527,6 +615,7 @@ function place() {
 
 function openWith(textarea, tail, items) {
   state.open = true;
+  state.lateOpenAt = 0;
   state.textarea = textarea;
   state.query = tail; // 当前整个词，Esc 时记住它
   state.items = items;
@@ -537,7 +626,11 @@ function openWith(textarea, tail, items) {
   place();
 }
 
+// keepBlockCache：evaluate() 里页面没命中、只是先藏起弹层等 block 结果时用，
+// 不然 mach → machi 每次都会把缓存清掉
 function close(opts = {}) {
+  cancelBlockSearch();
+  if (!opts.keepBlockCache) blockCache = null;
   if (!state.open) return;
   state.open = false;
   state.items = [];
@@ -575,12 +668,23 @@ function buildInsert(item) {
   return `((${item.uid}))`;
 }
 
+// 光标前那段对不上 item.q 就不插（挪过光标、Delay > 0 时匹配还没跟上），返回 false 让按键照常生效。
+// 不校验的话 cursor < q.length 时 slice(0, 负数) 会从末尾截，整段文字都会被换掉
 function commit() {
   const ta = state.textarea;
   const item = state.items[state.index];
-  if (!ta || !item) return close();
+  const cursor = ta ? ta.selectionStart : 0;
+  if (
+    !ta ||
+    !item ||
+    cursor !== ta.selectionEnd ||
+    cursor < item.q.length ||
+    ta.value.slice(cursor - item.q.length, cursor) !== item.q
+  ) {
+    close();
+    return false;
+  }
 
-  const cursor = ta.selectionStart;
   const before = ta.value.slice(0, cursor - item.q.length);
   const after = ta.value.slice(cursor);
   const link = buildInsert(item);
@@ -597,6 +701,7 @@ function commit() {
       ta.setSelectionRange(newCursor, newCursor);
     } catch (_) {}
   });
+  return true;
 }
 
 /* ------------------------------------------------------------------ */
@@ -607,7 +712,43 @@ function isBlockTextarea(el) {
   return el && el.tagName === "TEXTAREA" && el.classList.contains("rm-block-input");
 }
 
+function cancelBlockSearch() {
+  clearTimeout(state.blockTimer);
+  state.blockTimer = null;
+}
+
+// 定时器触发时这次求值可能已经过时：换了 block、又打了字、挪了光标、正在组词、按了 Esc
+function blockRequestLive(req) {
+  const ta = req.textarea;
+  if (req.seq !== state.seq || state.composing || !setting("enabled")) return false;
+  if (document.activeElement !== ta || roamAutocompleteVisible()) return false;
+  if (ta.selectionStart !== req.cursor || ta.selectionEnd !== req.cursor) return false;
+  if (tailBeforeCursor(ta.value, req.cursor) !== req.tail) return false;
+  if (state.dismissedTail && req.tail.startsWith(state.dismissedTail)) return false;
+  if (state.open && (state.textarea !== ta || state.query !== req.tail)) return false;
+  return true;
+}
+
+// block 搜索单独排一个定时器：页面候选查的是缓存好的标题列表，每个键都算也不卡，弹层照旧
+// 立刻出来；block 要扫全图谱，等停手 blockDelayMs 再搜，结果追加在页面候选后面。
+// 页面没命中的话这时才打开弹层。只有真要扫图谱才走这里，缓存能回答的在 evaluate() 里当场算
+function scheduleBlockSearch(req) {
+  cancelBlockSearch();
+  state.blockTimer = setTimeout(() => {
+    state.blockTimer = null;
+    if (!blockRequestLive(req)) return;
+    const blocks = findBlockMatches(req.tail, req.cands, req.textarea);
+    if (!blocks.length) return;
+    if (state.open) return appendItems(blocks); // 追加不重置 lateOpenAt
+    openWith(req.textarea, req.tail, blocks);
+    // 这个弹层是用户停手之后才冒出来的，他可能正按下 Enter 想换行。先放行一小会儿
+    state.lateOpenAt = Date.now();
+  }, setting("blockDelayMs"));
+}
+
 function evaluate(textarea) {
+  state.seq++;
+  cancelBlockSearch();
   if (!setting("enabled")) return close();
   if (state.composing) return;
   if (document.activeElement !== textarea) return close();
@@ -628,13 +769,20 @@ function evaluate(textarea) {
   if (state.dismissedTail && tail.startsWith(state.dismissedTail)) return close();
   state.dismissedTail = null;
 
-  const items = findMatches(tail, currentBlockUid(textarea));
-  if (!items.length) return close();
-  openWith(textarea, tail, items);
+  // 页面马上出。block 能从上次扫描的缓存里筛出来（mach → machi）也当场算，几毫秒的事，
+  // 列表不会每打一个字就闪一下；要真去扫图谱的才交给定时器
+  const pages = findPageMatches(tail);
+  const cands = setting("blockSearch") ? blockCandidates(tail, pages) : [];
+  const cached = cands.length > 0 && blockCacheCovers(shortestCandidate(cands), textarea);
+  const items = cached ? pages.concat(findBlockMatches(tail, cands, textarea)) : pages;
+  if (items.length) openWith(textarea, tail, items);
+  else close({ keepBlockCache: cands.length > 0 });
+  if (cands.length && !cached) scheduleBlockSearch({ seq: state.seq, textarea, tail, cursor, cands });
 }
 
 function schedule(textarea) {
   clearTimeout(state.timer);
+  cancelBlockSearch();
   // 默认 0：这次输入先上屏，紧接着就匹配。弹层晚一拍出现最恼人 —— 你以为在换行，
   // 它刚好冒出来把 Enter 抢走。大图谱里嫌打字发涩再把 Delay 调回 90
   state.timer = setTimeout(() => evaluate(textarea), setting("debounceMs"));
@@ -652,7 +800,8 @@ function onInput(e) {
 function onCompositionStart(e) {
   if (!isBlockTextarea(e.target)) return;
   state.composing = true;
-  close();
+  // 组词只是同一个词还没打完，留着 block 缓存：知识 → 知识管理 可以直接筛
+  close({ keepBlockCache: true });
 }
 
 function onCompositionEnd(e) {
@@ -673,8 +822,20 @@ function onKeyDown(e) {
       break;
     case "Enter":
     case "Tab":
-      commit();
+      // 弹层是 block 结果晚到才打开的、刚冒出来不到 200ms：这一下多半是冲着 Roam 按的，放行
+      if (state.lateOpenAt && Date.now() - state.lateOpenAt < LATE_OPEN_GRACE_MS) {
+        close();
+        return;
+      }
+      if (!commit()) return; // 没插入就放行，Enter 照常换行
       break;
+    case "ArrowLeft":
+    case "ArrowRight":
+    case "Home":
+    case "End":
+      // 光标一挪，候选就对不上光标前的字了。放行让浏览器先挪，下一拍按新位置重新匹配
+      schedule(e.target);
+      return;
     case "Escape":
       close({ dismiss: true });
       break;
@@ -1328,8 +1489,20 @@ function onload({ extensionAPI }) {
       {
         id: "blockMinChars",
         name: "Minimum characters for blocks",
-        description: "Block matches are noisier than page matches, so a higher threshold helps. Default: 3.",
+        description: "For text with Chinese, Japanese, or Korean characters. Block matches are noisier than page matches, so a higher threshold helps. Default: 3.",
         action: { type: "input", placeholder: "3" },
+      },
+      {
+        id: "blockMinCharsLatin",
+        name: "Minimum characters for blocks (other text)",
+        description: "Same, for text without Chinese, Japanese, or Korean characters, such as English. A few letters match a large part of the graph, so this starts higher. Default: 4.",
+        action: { type: "input", placeholder: "4" },
+      },
+      {
+        id: "blockDelayMs",
+        name: "Block search delay (ms)",
+        description: "How long to wait after you stop typing before searching blocks. Page suggestions don't wait; block results are added below them when they arrive, without moving the selection. 0 searches on every keystroke, which can make typing sluggish in a large graph. Default: 250.",
+        action: { type: "input", placeholder: "250" },
       },
       {
         id: "blockMaxResults",
@@ -1395,6 +1568,8 @@ function onunload() {
   listeners.forEach((off) => off());
   listeners = [];
   clearTimeout(state.timer);
+  cancelBlockSearch();
+  blockCache = null;
   if (popup) popup.remove();
   popup = null;
   themeCache = null;

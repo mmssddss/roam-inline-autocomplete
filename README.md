@@ -21,7 +21,8 @@ Single file, no build step and no dependencies — `extension.js` is the whole e
 |---|---|
 | Type as usual | Suggestions appear when the text before the cursor matches a page title, or the text of a block |
 | ↑ / ↓ | Move through the suggestions |
-| Enter / Tab | Page: replaces the matched text with `[[Title]]` (or `#tag`). Block: replaces it with `((uid))` (or `[text](((uid)))`) |
+| Enter / Tab | Page: replaces the matched text with `[[Title]]` (or `#tag`). Block: replaces it with `((uid))` (or `[text](((uid)))`). If the text before the cursor no longer matches the suggestion (say you moved the cursor), nothing is replaced and the key works as usual |
+| ← / → / Home / End | Move the cursor as usual; the suggestions follow the word in front of its new position |
 | Click | Inserts the suggestion you clicked, same as Enter |
 | Esc | Close the suggestions. They stay closed while you keep typing that same word, and come back once you delete part of it, move on to another word, or switch blocks |
 
@@ -36,7 +37,7 @@ Color tells you what a suggestion is:
 
 The part that matched is bold with a light background in both, so the color stays free to mean page or block.
 
-Pages come first, then blocks, with a divider in between. Block search is on by default, starts at 3 characters, and shows up to 10 blocks. You can change these or turn it off in the settings. Blocks are searched by the whole word in front of the cursor; only if that finds nothing does it fall back to the shorter piece that matched a page title.
+Pages come first, then blocks, with a divider in between. Pages show up as you type. Blocks are searched once you pause for 250 ms, so a large graph isn't searched on every keystroke; they are added below the pages without moving the selection. As you keep typing the same word, the block results are narrowed down from that search right away instead of searching again. If only blocks matched, the popup opens when they arrive, and for its first 200 ms Enter and Tab still go to Roam, so a newline you were already typing isn't taken over. Block search is on by default, starts at 3 characters for Chinese, Japanese, or Korean text and 4 for other text, and shows up to 10 blocks. You can change these or turn it off in the settings. Blocks are searched by the whole word in front of the cursor; only if that finds nothing does it fall back to the shorter piece that matched a page title.
 
 ## Preview
 
@@ -76,11 +77,13 @@ Find them under Settings → Inline Autocomplete.
 | Minimum characters | 2 | Characters needed before the cursor before pages are matched (blocks have their own setting below) |
 | Lookback length | 24 | How far back to look for a match in languages without spaces |
 | Max page suggestions | 25 | How many pages to show (the list scrolls) |
-| Delay (ms) | 0 | How long to wait after you stop typing. Raise it if typing feels sluggish in a big graph |
+| Delay (ms) | 0 | How long to wait after you stop typing before matching pages. Raise it if typing feels sluggish in a big graph |
 | Skip daily notes pages | On | Leaves date pages out of the suggestions |
 | Page link format | `[[page]]` | Insert `[[page]]` or `#tag` |
 | Suggest blocks | On | Also suggest matching blocks |
-| Minimum characters for blocks | 3 | Characters needed before blocks are searched |
+| Minimum characters for blocks | 3 | Characters needed before blocks are searched, for text with Chinese, Japanese, or Korean characters |
+| Minimum characters for blocks (other text) | 4 | Same, for text without them, such as English |
+| Block search delay (ms) | 250 | How long to wait after you stop typing before searching blocks. Page suggestions don't wait. 0 searches on every keystroke |
 | Max block suggestions | 10 | How many blocks to show |
 | Block reference format | `((uid))` | Insert `((uid))` or `[text](((uid)))` |
 

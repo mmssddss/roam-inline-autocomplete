@@ -4,6 +4,35 @@ All notable changes to this extension are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-10-05
+
+### Added
+
+- **Block search delay (ms)** setting (default 250). Block suggestions are searched once
+  you pause typing and added below the page suggestions without moving the selection;
+  page suggestions still show up on every keystroke.
+- **Minimum characters for blocks (other text)** setting (default 4) for text without
+  Chinese, Japanese, or Korean characters.
+
+### Changed
+
+- Block search is much lighter on large graphs: at most one search per pause instead of
+  up to two per keystroke, and as a word grows (mach → machi) the previous results are
+  narrowed down right away instead of searching the graph again.
+- When only blocks matched and the popup opens after you pause, Enter and Tab go to Roam
+  for its first 200 ms, so a newline you were already typing isn't taken over.
+- **Minimum characters for blocks** now applies to text with Chinese, Japanese, or
+  Korean characters; other text uses the new setting above.
+- ← / → / Home / End move the cursor as usual while suggestions are open, and the
+  suggestions follow the word in front of the new cursor position.
+
+### Fixed
+
+- Enter / Tab could replace the wrong text after the cursor was moved while
+  suggestions were open, or when Enter was pressed before a delayed match caught up.
+  Now nothing is replaced if the text before the cursor no longer matches, and the key
+  works as usual (Enter inserts a newline instead of being swallowed).
+
 ## [1.0.1] - 2026-09-22
 
 ### Added
