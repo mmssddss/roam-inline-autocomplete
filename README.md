@@ -22,7 +22,7 @@ Single file, no build step and no dependencies — `extension.js` is the whole e
 | Type as usual | Suggestions appear when the text before the cursor matches a page title, or the text of a block |
 | ↑ / ↓ | Move through the suggestions |
 | Enter / Tab | Page: replaces the matched text with `[[Title]]` (or `#tag`). Block: replaces it with `((uid))` (or `[text](((uid)))`). If the text before the cursor no longer matches the suggestion (say you moved the cursor), nothing is replaced and the key works as usual |
-| ← / → / Home / End | Move the cursor as usual; the suggestions follow the word in front of its new position |
+| ← / → / Home / End | Move the cursor as usual and close the suggestions |
 | Click | Inserts the suggestion you clicked, same as Enter |
 | Esc | Close the suggestions. They stay closed while you keep typing that same word, and come back once you delete part of it, move on to another word, or switch blocks |
 

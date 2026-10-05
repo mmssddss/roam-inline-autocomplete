@@ -23,8 +23,8 @@ All notable changes to this extension are documented here. The format is based o
   for its first 200 ms, so a newline you were already typing isn't taken over.
 - **Minimum characters for blocks** now applies to text with Chinese, Japanese, or
   Korean characters; other text uses the new setting above.
-- ← / → / Home / End move the cursor as usual while suggestions are open, and the
-  suggestions follow the word in front of the new cursor position.
+- ← / → / Home / End move the cursor as usual and close the suggestions, so a
+  following Enter is Roam's own newline.
 
 ### Fixed
 

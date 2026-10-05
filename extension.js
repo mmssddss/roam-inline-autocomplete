@@ -7,7 +7,7 @@
  * 弹框左右分栏：左边是候选列表，右边实时预览选中项（页面内容 / block 及其子块），底部是按键提示。
  * - Enter / Tab：把光标前的匹配文字替换成对应引用
  * - Esc：关闭候选（同一个词不再重复弹出，直到你换词）
- * - ← / → / Home / End：照常挪光标，候选按新位置重新匹配
+ * - ← / → / Home / End：照常挪光标，弹层关闭
  * - ↑ / ↓：选择候选
  * - 中文/日文/韩文：IME 组词期间不弹出，只在 compositionend 之后匹配；
  *   没有空格分词的语言用「光标前若干字符的最长后缀」去匹配标题。
@@ -833,8 +833,9 @@ function onKeyDown(e) {
     case "ArrowRight":
     case "Home":
     case "End":
-      // 光标一挪，候选就对不上光标前的字了。放行让浏览器先挪，下一拍按新位置重新匹配
-      schedule(e.target);
+      // 光标一挪，候选就对不上光标前的字了。关掉弹层、按键放行，接着按 Enter 就是 Roam 自己的换行
+      clearTimeout(state.timer);
+      close();
       return;
     case "Escape":
       close({ dismiss: true });
